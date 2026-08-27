@@ -31,6 +31,10 @@ dependencies = [
     "audioop-lts==0.2.2; python_version >= '3.13'",
     "litellm==1.86.2",
     "google-genai==2.11.0",
+    "sqlmodel==0.0.22",
+    "alembic==1.14.0",
+    "psycopg[binary]==3.2.3",
+    "cryptography==43.0.3",
 ]
 
 [project.optional-dependencies]
