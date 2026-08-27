@@ -19,6 +19,7 @@ def create_tenant(payload: TenantCreate, session: Session = Depends(get_session)
         name=payload.name,
         slug=payload.slug,
     )
+    response = TenantCreateResponse(**tenant.model_dump(), api_token=plaintext_token)
     audit.write_audit_log(
         session,
         tenant_id=tenant.id,
@@ -27,7 +28,7 @@ def create_tenant(payload: TenantCreate, session: Session = Depends(get_session)
         action="created",
         actor="admin",
     )
-    return TenantCreateResponse(**tenant.model_dump(), api_token=plaintext_token)
+    return response
 
 
 @router.get("/content/tenants", response_model=list[TenantRead])

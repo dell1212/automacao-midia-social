@@ -4,6 +4,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 from sqlalchemy import JSON, Column
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 
@@ -44,7 +45,10 @@ class ContentTenant(SQLModel, table=True):
     name: str
     slug: str = Field(unique=True, index=True)
     api_token_hash: str = Field(unique=True, index=True)
-    entitlement_status: EntitlementStatus = Field(default=EntitlementStatus.trial)
+    entitlement_status: EntitlementStatus = Field(
+        default=EntitlementStatus.trial,
+        sa_column=Column(SAEnum(EntitlementStatus, name="content_entitlement_status")),
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -85,8 +89,13 @@ class ContentPiece(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     campaign_id: int = Field(foreign_key="content_campaigns.id", index=True)
-    type: ContentPieceType
-    status: ContentPieceStatus = Field(default=ContentPieceStatus.draft)
+    type: ContentPieceType = Field(
+        sa_column=Column(SAEnum(ContentPieceType, name="content_piece_type"))
+    )
+    status: ContentPieceStatus = Field(
+        default=ContentPieceStatus.draft,
+        sa_column=Column(SAEnum(ContentPieceStatus, name="content_piece_status")),
+    )
     asset_url: Optional[str] = None
     scheduled_for: Optional[datetime] = None
     posted_at: Optional[datetime] = None
@@ -101,7 +110,9 @@ class ContentApprovalRule(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     campaign_id: int = Field(foreign_key="content_campaigns.id", index=True)
     condition: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    action: ApprovalAction
+    action: ApprovalAction = Field(
+        sa_column=Column(SAEnum(ApprovalAction, name="content_approval_action"))
+    )
     priority: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

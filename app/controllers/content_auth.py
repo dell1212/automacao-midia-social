@@ -25,7 +25,9 @@ def verify_admin_token(x_admin_token: Optional[str] = Header(default=None)) -> N
             status_code=500,
             detail=f"{_ADMIN_TOKEN_ENV} is not configured on the server",
         )
-    if not x_admin_token or not secrets.compare_digest(x_admin_token, configured):
+    if not x_admin_token or not secrets.compare_digest(
+        x_admin_token.encode("utf-8"), configured.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="Invalid admin token")
 
 
