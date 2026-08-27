@@ -52,23 +52,45 @@ avatares com voz clonada.
 
 ## Arquitetura
 
-### Catálogo de modelos (global)
+### Catálogo de modelos (global, em arquivo)
 
-`generation_models` é um catálogo **da plataforma**, não do tenant — a capacidade de um modelo
-(ex: "wavespeed/seedream-v3 suporta image-to-video em 1080p, até 8s") é verdade pra qualquer tenant
-que o use, então não faz sentido duplicar por tenant. Populado/mantido pelo time (seed via migration
-+ manutenção manual nesta fase; um painel de administração fica pra depois, não é objetivo aqui):
+O catálogo de modelos é **da plataforma**, não do tenant — a capacidade de um modelo (ex:
+"wavespeed/seedream-v3 suporta image-to-video em 1080p, até 8s") é verdade pra qualquer tenant que o
+use, então não faz sentido duplicar por tenant.
 
+Ele **não é tabela de banco**: vive em `app/services/content/models_catalog.yaml`, versionado no
+repo e carregado em memória na inicialização da aplicação. O ecossistema de IA muda semanalmente
+(modelos novos, limites alterados, depreciações) e exigir uma migration Alembic a cada mudança de
+capacidade de um provider vira gargalo de manutenção — capacidade de modelo é configuração, não
+schema. Como o catálogo é pequeno (dezenas de entradas), global e somente-leitura em runtime, um
+arquivo carregado em memória entrega o mesmo que uma tabela sem o custo de sync.
+
+```yaml
+# models_catalog.yaml (estrutura)
+- provider: wavespeed
+  kind: video
+  model_id: bytedance/seedance-2.0-fast/text-to-video
+  name: Seedance 2.0 Fast
+  is_active: true
+  supports_text_to_image: false
+  supports_image_to_image: false
+  supports_text_to_video: true
+  supports_image_to_video: true
+  supports_reference_image: true
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9", "1:1"]
+  supported_resolutions: ["720p", "1080p"]
+  max_duration: 15
+  cost_config: { ... }
 ```
-generation_models
-  id, provider, kind (image|video|voice), model_id, name, is_active,
-  supports_text_to_image, supports_image_to_image,
-  supports_text_to_video, supports_image_to_video,
-  supports_reference_image, supports_avatar,
-  supported_ratios (jsonb), supported_resolutions (jsonb), max_duration,
-  cost_config (jsonb),
-  created_at, updated_at
-```
+
+`content_generation_jobs` guarda `provider` e `model` como strings denormalizadas — não há FK pro
+catálogo, então remover ou renomear uma entrada nunca quebra histórico de jobs já executados. O
+arquivo é validado no load (schema + `model_id` único por provider); entrada malformada derruba o
+boot com erro explícito, em vez de falhar silenciosamente na primeira geração.
+
+Se no futuro surgir necessidade de editar capacidades sem deploy (painel de administração), aí sim
+vale materializar isso numa tabela sincronizada a partir do arquivo — não antes.
 
 ### Provedores por tenant
 
@@ -95,7 +117,7 @@ O orquestrador não escolhe por prioridade cega — resolve requisitos primeiro:
 1. Generation request declara: kind, mode (text_to_x | image_to_x), aspect_ratio,
    resolution, duration, reference_image (bool), avatar (bool)
 2. Busca content_generation_providers do tenant com kind pedido e is_active=true
-3. Pra cada provider candidato, busca em generation_models os modelos ativos desse
+3. Pra cada provider candidato, busca no catálogo em memória os modelos ativos desse
    provider+kind
 4. Filtra por capability match (supports_* + supported_ratios/resolutions/max_duration
    compatíveis com o pedido)
@@ -173,6 +195,13 @@ Cada `GenerationJob` bem-sucedido produz pelo menos um `content_asset`. Isso per
 `type=video` reter também a imagem-base e o áudio de narração que a compuseram (rastreável,
 reaproveitável), não só o vídeo final.
 
+`is_intermediate` marca os artefatos que existem só como insumo de outro asset (a imagem-base e o
+áudio de narração de um vídeo composto, por exemplo) — o asset apontado por
+`ContentPiece.asset_url` nunca é intermediário. Retenção/limpeza continua fora de escopo desta fase
+(ver Não-objetivos), mas a flag precisa nascer junto com o asset: sem ela, uma rotina de limpeza
+futura teria que reinferir por heurística qual arquivo é seguro apagar, e Supabase Storage infla
+rápido com geração de vídeo.
+
 ### Retry Policy
 
 Classificação de erro decide a ação — não é retry cego:
@@ -190,9 +219,10 @@ aplicação nesta fase (não precisa ser configurável por tenant ainda).
 ### Cost Telemetry
 
 Sem billing nesta fase — só telemetria. Cada `GenerationJob` registra `input_units`/`output_units`
-(quando o provider expõe) e `estimated_cost`/`actual_cost`/`currency`, usando `cost_config` do
-`generation_models` como base de estimativa. Habilita análise futura por tenant/client/campaign/
-piece/provider/model sem precisar de nova coluna — os dados já nascem no formato certo.
+(quando o provider expõe) e `estimated_cost`/`actual_cost`/`currency`, usando o `cost_config` do
+catálogo de modelos como base de estimativa. Habilita análise futura por
+tenant/client/campaign/piece/provider/model sem precisar de nova coluna — os dados já nascem no
+formato certo.
 
 ### Observability
 
@@ -233,12 +263,24 @@ aplicação — não um workflow engine genérico, ver Não-objetivos):
 - **audio**: 1 `GenerationJob(kind=voice)` com a voz resolvida (`voice_id` explícito ou a do
   `avatar_id`) → 1 `content_asset(type=audio)`.
 - **video**: resolve imagem-base (avatar → `source_image_piece_id` → gera nova via job `kind=image`,
-  nessa ordem de preferência) → resolve narração (voz do avatar, `voice_id` explícito, ou nenhuma;
-  se houver, `GenerationJob(kind=voice)`) → `GenerationJob(kind=video)` (image-to-video com a
-  imagem-base resolvida, ou text-to-video se nenhuma se aplica) → se há narração, compõe áudio+vídeo
+  nessa ordem de preferência) → **normaliza o aspect ratio da imagem-base** (ver abaixo) → resolve
+  narração (voz do avatar, `voice_id` explícito, ou nenhuma; se houver,
+  `GenerationJob(kind=voice)`) → `GenerationJob(kind=video)` (image-to-video com a imagem-base
+  resolvida, ou text-to-video se nenhuma se aplica) → se há narração, compõe áudio+vídeo
   reaproveitando as funções de merge já existentes em `app/services/video.py` → `content_asset`s
   intermediários (imagem-base, áudio) e final (vídeo) todos persistidos, `asset_url` da piece aponta
   pro vídeo final.
+
+**Normalização de aspect ratio da imagem-base.** A imagem de referência de um avatar é cadastrada
+uma vez e reusada em vários formatos de saída — uma foto 1:1 alimentando um vídeo 9:16 pra Reels é o
+caso comum, não a exceção. Enviar a imagem crua nesse caso faz o provider de image-to-video falhar
+ou distorcer o resultado. Antes de chamar o provider, se o ratio da imagem-base difere do
+`aspect_ratio` pedido pro vídeo, a imagem passa por um passo local de crop/pad determinístico
+(Pillow, já disponível como dependência de `moviepy`) — **sem** gerar uma imagem nova via provider,
+que custaria outra chamada paga e perderia a identidade visual do avatar. Estratégia: crop centrado
+quando o corte é pequeno (até ~15% da dimensão), pad com fundo neutro quando maior, preservando o
+enquadramento do rosto. A imagem normalizada é persistida como `content_asset` intermediário — o que
+foi de fato enviado ao provider fica auditável, não só a original.
 
 ## Fluxo assíncrono
 
@@ -255,6 +297,17 @@ aplicação — não um workflow engine genérico, ver Não-objetivos):
    `_schedule_cross_post` — não a máquina de estado Redis/Memory do pipeline de vídeo legado, que é
    feita pra outro formato de polling de UI). Job passa por `running` → `completed`/`retrying`
    (segundo a Retry Policy) → eventualmente `completed`/`failed`/`timeout`.
+
+   Um job de vídeo segura uma thread por até 10 minutos fazendo polling no provider, então um pico
+   de requisições esgota o pool e trava a aplicação. Mitigação (o mesmo desenho que
+   `_cross_post_executor` já usa hoje): **pools separados por `kind`** — `image`/`voice` são curtos
+   e podem ter mais workers; `video` recebe um pool próprio, pequeno e explicitamente dimensionado —
+   mais um `BoundedSemaphore` limitando jobs pendentes, como
+   `_cross_post_max_pending_tasks` faz. Estourou o limite de pendentes → a piece é criada com o job
+   em `queued` e ele espera slot, sem derrubar a request. Migrar pra worker externo (Celery/RQ/arq)
+   ou pra callback via webhook do provider (quando suportado) é a saída estrutural — fora de escopo
+   aqui, mas o `GenerationJob` já existir como linha no banco é o que torna essa migração viável sem
+   redesenhar nada.
 4. Todos os jobs da piece completos → upload dos assets no Supabase Storage, `content_asset`s
    criados, `ContentPiece.status=pending_approval`. Qualquer job falhou após esgotar
    retry/fallback → `ContentPiece.status=failed` + linha em `content_audit_logs` com o motivo.
@@ -320,15 +373,9 @@ foi determinada sem recalcular a regra vigente) — sem audit log dedicado a pol
 
 ## Modelo de dados — mudanças
 
-```
-generation_models  (nova, catálogo global)
-  id, provider, kind, model_id, name, is_active,
-  supports_text_to_image, supports_image_to_image,
-  supports_text_to_video, supports_image_to_video,
-  supports_reference_image, supports_avatar,
-  supported_ratios (jsonb), supported_resolutions (jsonb), max_duration,
-  cost_config (jsonb), created_at, updated_at
+O catálogo de modelos não entra aqui: é arquivo, não tabela (ver "Catálogo de modelos").
 
+```
 content_generation_providers  (nova, tenant-scoped)
   id, tenant_id, kind, provider, credentials_encrypted, config (jsonb),
   priority, is_active, created_at
@@ -344,7 +391,7 @@ content_generation_jobs  (nova)
 content_assets  (nova)
   id, tenant_id, client_id, content_piece_id, generation_job_id,
   type, url, storage_path, mime_type, size_bytes, width, height, duration,
-  provider, model, metadata (jsonb), created_at
+  provider, model, is_intermediate (bool, default false), metadata (jsonb), created_at
 
 content_avatars  (nova)
   id, client_id, name, reference_image_url, voice_provider, voice_id, created_at
@@ -368,15 +415,16 @@ dedup olha por `campaign_id`.
 
 ## Escopo desta fase (P0)
 
-- `generation_models`, `content_generation_providers`, `content_generation_jobs`, `content_assets`,
-  `content_avatars` + migrations Alembic + colunas novas em `content_pieces`.
-- Seed inicial de `generation_models` (migration de dados) com os modelos concretos de WaveSpeed,
-  fal.ai, Gemini (image + video) e ElevenLabs (voice) que forem usados nesta fase.
+- `content_generation_providers`, `content_generation_jobs`, `content_assets`, `content_avatars` +
+  migrations Alembic + colunas novas em `content_pieces`.
+- `models_catalog.yaml` com os modelos concretos de WaveSpeed, fal.ai, Gemini (image + video) e
+  ElevenLabs (voice) usados nesta fase, mais o loader validado no boot.
+- Normalização de aspect ratio da imagem-base via Pillow (crop/pad local antes do image-to-video).
 - CRUD de provedores (`app/controllers/v1/content/providers.py`) com validação de credencial no
   create.
 - CRUD de avatares (`app/controllers/v1/content/avatars.py`).
-- `GET /content/models` (leitura, filtro por `provider`/`kind`) — suporte pra UI futura de
-  configuração de provider escolher/priorizar modelos.
+- `GET /content/models` (leitura do catálogo em memória, filtro por `provider`/`kind`) — suporte pra
+  UI futura de configuração de provider escolher/priorizar modelos.
 - `GET /content/pieces/{id}/jobs` (leitura, debug/observabilidade) — sem CRUD de job via API, jobs
   só são criados pelo orquestrador internamente.
 - Adapters WaveSpeed, fal.ai, Gemini (`generate_image` + `generate_video`) e ElevenLabs
@@ -422,7 +470,9 @@ dedup olha por `campaign_id`.
 - Controle de custo/limite de geração por `entitlement_status` — fase 4 (automação e aprovação).
 - Consistência visual do avatar entre cenas/vídeos diferentes — limitação inerente dos provedores.
 - Regenerar/versionar uma piece existente — pra gerar de novo, cria-se uma nova piece por ora.
-- Política de retenção/limpeza de artefatos descartados no Supabase Storage.
+- Política de retenção/limpeza de artefatos no Supabase Storage — a flag `is_intermediate` nasce
+  nesta fase pra tornar essa limpeza trivial depois, mas nenhuma rotina de expurgo roda agora.
+- Worker externo (Celery/RQ/arq) ou callback via webhook do provider no lugar do pool de threads.
 - Clonagem de voz em si (cadastro da voz no ElevenLabs) — acontece fora desta API.
 - Integrações reais com redes sociais / postagem (fase 3) e motor de regras em runtime (fase 4).
 
