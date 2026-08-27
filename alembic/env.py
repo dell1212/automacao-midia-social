@@ -20,7 +20,7 @@ target_metadata = SQLModel.metadata
 database_url = os.environ.get("DATABASE_URL")
 if not database_url:
     raise RuntimeError("DATABASE_URL is not set.")
-config.set_main_option("sqlalchemy.url", database_url)
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 
 def include_object(object, name, type_, reflected, compare_to):
