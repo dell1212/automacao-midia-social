@@ -21,7 +21,9 @@ Esta fase:
 4. Trata a geração como uma **execução técnica rastreável** (`GenerationJob`), separada da entidade
    de conteúdo (`ContentPiece`), com registro de assets, retry/fallback por capability e telemetria
    de custo — infraestrutura pensada pra durar conforme novos providers/modelos entrarem.
-5. Fecha o ciclo de criação de `ContentPiece`, produzindo `image`, `audio` ou `video` de fato.
+5. Fecha o ciclo de criação de `ContentPiece`, produzindo `image`, `audio` ou `video` de fato, já
+   carimbando a classificação de conteúdo regulado (categoria, risco) que a revisão/publicação
+   futura vai precisar.
 
 ## Objetivo desta fase
 
@@ -43,6 +45,8 @@ avatares com voz clonada.
 - **Generation → Asset (1:N)** — uma execução pode gerar mais de um artefato (ex: thumbnail junto
   com o vídeo); nada assume 1 job = 1 arquivo.
 - **Nem todo erro merece retry** — falha é classificada antes de decidir se tenta de novo.
+- **Classification ≠ enforcement** — classificar conteúdo regulado (categoria, risco) e agir sobre
+  essa classificação são coisas separadas. Esta fase classifica e persiste; nada bloqueia.
 - **Tudo é rastreável** — toda geração é auditável por tenant, client, campaign, piece, job,
   provider, model, tentativa, asset e custo.
 
@@ -114,6 +118,8 @@ Um módulo por provider em `app/services/content/providers/`: `wavespeed.py`, `f
 `generate_videos_wavespeed`. Cada adapter mapeia os erros do provider pra uma taxonomia canônica
 (`rate_limit`, `transient`, `invalid_credentials`, `invalid_params`, `content_policy`,
 `unsupported_capability`) — é essa taxonomia que a Retry Policy usa pra decidir se tenta de novo.
+`content_policy` aqui é a recusa do próprio provider (o modelo se negou a gerar), sem relação com o
+Regulated Content Policy Gate descrito adiante, que é classificação nossa e não bloqueia nada.
 
 ### GenerationJob — execução técnica
 
@@ -214,8 +220,9 @@ tenant — a clonagem em si acontece fora desta API.
 
 `POST /content/pieces` aceita `campaign_id`, `type`, `generation_prompt`, `avatar_id` (opcional),
 `source_image_piece_id` (opcional), `voice_id` (opcional), `is_synthetic_media` (obrigatório),
-`idempotency_key` (obrigatório). Validação por `type`: `audio` e `video` exigem `generation_prompt`
-não vazio; `image` exige `generation_prompt` **ou** `avatar_id`. Falta de campo obrigatório → 422.
+`content_category` (opcional, nullable — ver "Regulated Content Policy Gate"), `idempotency_key`
+(obrigatório). Validação por `type`: `audio` e `video` exigem `generation_prompt` não vazio; `image`
+exige `generation_prompt` **ou** `avatar_id`. Falta de campo obrigatório → 422.
 
 Orquestração por `type`, agora expressa como grafo de jobs (execução sequencial simples em código de
 aplicação — não um workflow engine genérico, ver Não-objetivos):
@@ -269,6 +276,48 @@ pelo sistema a partir de haver ou não `avatar_id`. Quem monta o plano de conte�
 se ela é declarada como IA-gerada; o risco de declarar incorretamente é do cliente. O sistema só
 persiste e expõe o valor, pra fase 3 (publicação) usar.
 
+## Regulated Content Policy Gate (fundação mínima)
+
+Conteúdo em nicho regulado (saúde, farmacêutico, financeiro, jurídico, etc.) eventualmente vai
+precisar de classificação de risco e revisão humana obrigatória. O motor completo disso é fase
+futura — mas os **dados** precisam nascer junto com a piece, senão a fase futura não tem como
+reconstruir a classificação de conteúdo já gerado. Esta fase implementa só a estrutura persistida e
+a classificação estática.
+
+**Princípio: `classification ≠ enforcement`.** Nesta fase o gate apenas registra; não bloqueia
+geração, upload nem publicação, e não altera o workflow existente da piece.
+
+Quatro colunas novas em `content_pieces`:
+
+- **`content_category`** (nullable, extensível): `medical`, `pharmaceutical`, `financial`,
+  `insurance`, `legal`, `alcohol`, `gambling`, `political`, `regulated_product` ou `null`.
+  Declarado **explicitamente** por quem cria a piece — mesmo padrão de `is_synthetic_media`, sem
+  classificação automática do prompt ou do asset. `null` é valor válido e continua sendo o default.
+- **`risk_level`** (`none|low|medium|high`): derivado por função pura e determinística a partir de
+  uma tabela estática `content_category → risk_level`, centralizada em um único módulo de fácil
+  alteração. Sem chamada externa, sem IA. Persistido na criação e **nunca** recalculado
+  retroativamente. Mapeamento inicial indicativo: `null → none`; `medical`/`pharmaceutical` →
+  `high`; `financial`/`insurance`/`legal` → `medium` (valores concretos das demais categorias são
+  definidos no plano de implementação).
+- **`requires_human_review`** (bool): derivado — `risk_level = high` → `true`, caso contrário
+  `false`. Nesta fase o campo é **inerte por construção**: a piece segue o fluxo normal e chega a
+  `pending_approval` como qualquer outra (não existe auto-approve até a fase 4, então não há o que
+  bloquear). Existe pra que o motor de regras da fase 4 possa consultá-lo sem migration nova.
+- **`policy_version`** (string, valor inicial `"v1"`): versão da tabela estática usada na
+  classificação, persistida na criação. Se a tabela mudar depois, pieces antigas continuam
+  associadas à versão sob a qual foram classificadas.
+
+`risk_level`, `requires_human_review` e `policy_version` são **derivados pelo backend** — o cliente
+não pode informá-los na request; só `content_category` é aceito como entrada, e um valor fora da
+lista suportada → 422.
+
+Exemplo — request com `content_category: "medical"` persiste:
+`risk_level=high`, `requires_human_review=true`, `policy_version="v1"`, sem nenhuma chamada externa
+e sem mudança no fluxo de geração/aprovação.
+
+Auditabilidade se resolve pelas próprias quatro colunas (dá pra reconstruir como a classificação
+foi determinada sem recalcular a regra vigente) — sem audit log dedicado a policy nesta fase.
+
 ## Modelo de dados — mudanças
 
 ```
@@ -306,6 +355,10 @@ content_pieces  (alterada — novas colunas)
   source_image_piece_id (FK content_pieces.id, nullable — auto-referência)
   voice_id (text, nullable)
   is_synthetic_media (bool, not null)
+  content_category (text/enum, nullable)
+  risk_level (enum none|low|medium|high, not null, default none — derivado)
+  requires_human_review (bool, not null, default false — derivado)
+  policy_version (text, not null, default 'v1' — derivado)
   asset_url passa a ser ponteiro denormalizado pro content_asset final (continua nullable,
     preenchido só quando a piece completa)
 ```
@@ -331,6 +384,9 @@ dedup olha por `campaign_id`.
 - Capability Engine + Retry Policy no orquestrador (`app/services/content/generation.py`).
 - `POST /content/pieces` funcional (cria piece + job(s) + gera de fato), com idempotência, timeout
   por `kind` e disclosure de mídia sintética.
+- Regulated Content Policy Gate mínimo: `content_category` como entrada opcional validada +
+  derivação estática de `risk_level`/`requires_human_review`/`policy_version` (classificação
+  persistida, sem enforcement).
 - Cost telemetry (campos preenchidos, sem lógica de billing/limite).
 - Observability básica (trace via `GenerationJob.id`, redaction de segredo reaproveitado).
 - Upload de artefatos gerados pro Supabase Storage (novo — hoje não existe integração com Storage
@@ -344,10 +400,12 @@ dedup olha por `campaign_id`.
 - Circuit breaker por provider/model (estados CLOSED/OPEN/HALF_OPEN, cooldown). O schema de
   `content_generation_jobs` já dá o histórico de falha necessário pra calcular isso depois sem
   migration nova.
-- Regulated Content Policy Gate (classificação de categoria regulada, `risk_level`,
-  `requires_human_review`, revisão humana obrigatória por categoria). Fica documentado como direção
-  futura; não adiciono colunas especulativas pra isso agora (`content_pieces.status` já cobre o
-  gate binário aprovar/rejeitar que a Fundação previu).
+- Regulated Content Policy **Engine** — a fundação de classificação entra em P0 (ver seção
+  própria); o que fica pra depois é tudo que age sobre ela: `policy_status` como máquina de estados
+  própria, enforcement/bloqueio automático por categoria ou risco, workflow especial de revisão
+  humana, classificação automática por IA (análise semântica do prompt ou do asset gerado, detecção
+  de claims, fact checking), policies por país/jurisdição, policies configuráveis por tenant e motor
+  dinâmico de regras.
 - `generation_request` como entidade própria reutilizável/replayable — o `request_payload` do job já
   guarda o necessário pra reprodutibilidade estruturalmente; uma abstração dedicada de "refazer essa
   geração exata" fica pra quando houver demanda real.
@@ -370,7 +428,8 @@ dedup olha por `campaign_id`.
 
 ## Erros
 
-Reaproveita `HttpException` (`app/models/exception.py`). Casos novos: nenhum provedor ativo pro
+Reaproveita `HttpException` (`app/models/exception.py`). Casos novos: `content_category` fora da
+lista suportada (422), nenhum provedor ativo pro
 `kind` exigido (422 na criação da piece), nenhum modelo compatível com os requisitos técnicos do
 pedido (`GenerationJob.error_code=no_compatible_model`, não é erro HTTP — a piece já foi criada com
 202, o job falha depois), `source_image_piece_id`/`avatar_id`/`voice_id` inválido ou de outro client
@@ -381,5 +440,6 @@ retry/fallback (piece `failed`, não é erro de API).
 
 Sem suíte obrigatória por padrão (convenção do projeto). Candidatos a teste pontual ao final:
 capability matching (o filtro certo de modelo pro pedido certo), classificação retryable/
-non-retryable da Retry Policy, e checagem de idempotência — são as três peças de lógica não-trivial
-desta fase.
+non-retryable da Retry Policy, checagem de idempotência, e a função pura de derivação
+`content_category → risk_level → requires_human_review` — são as peças de lógica não-trivial desta
+fase.
