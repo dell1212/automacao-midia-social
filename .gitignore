@@ -3,6 +3,8 @@
 /.env.*
 /.worktrees/
 /.superpowers/
+/.continue/
+/opencode.json
 /config.toml
 /config.toml.bak
 /storage/
