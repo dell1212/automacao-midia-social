@@ -40,5 +40,4 @@ streamlit.log
 coverage.xml
 htmlcov/
 .codegraph
-/docs/superpowers
 .understand-anything
