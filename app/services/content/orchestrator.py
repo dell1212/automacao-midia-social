@@ -92,14 +92,29 @@ def run_job(
         started = time.monotonic()
 
         def attempt():
-            return provider_adapters.generate(
-                provider=candidate.provider,
-                kind=requirements.kind,
-                api_key=api_key,
-                model_id=candidate.model_id,
-                poll_timeout=timeout_seconds,
-                **params,
-            )
+            try:
+                return provider_adapters.generate(
+                    provider=candidate.provider,
+                    kind=requirements.kind,
+                    api_key=api_key,
+                    model_id=candidate.model_id,
+                    poll_timeout=timeout_seconds,
+                    **params,
+                )
+            except GenerationError:
+                raise
+            except Exception as exc:
+                # Anything unclassified (malformed JSON, a bad base64 payload,
+                # etc.) must still become a GenerationError, or it propagates
+                # past run_job entirely and the job row is left stuck in
+                # `running` forever. Only the exception type name is carried
+                # in the message — never str(exc), which could echo response
+                # content, matching wrap_request_exception's redaction
+                # discipline in providers/base.py.
+                raise GenerationError(
+                    GenerationErrorCode.unknown,
+                    f"{candidate.provider} adapter raised {type(exc).__name__}",
+                ) from exc
 
         try:
             generated = run_with_retry(

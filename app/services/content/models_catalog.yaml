@@ -146,7 +146,11 @@
   supports_text_to_image: false
   supports_image_to_image: false
   supports_text_to_video: true
-  supports_image_to_video: true
+  # The adapter (providers/gemini.py) sends the source image as a gcsUri,
+  # but every URL this module produces is a Supabase HTTPS URL or an
+  # avatar's reference_image_url — never gs://. Marked false until the
+  # adapter fetches the image and sends bytesBase64Encoded instead.
+  supports_image_to_video: false
   supports_reference_image: true
   supports_avatar: false
   supported_ratios: ["9:16", "16:9"]

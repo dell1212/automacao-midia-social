@@ -16,7 +16,12 @@ from app.models.content import (
     ContentPieceStatus,
     ContentPieceType,
 )
-from app.models.content_generation import ContentAssetType, GenerationKind
+from app.models.content_generation import (
+    ContentAsset,
+    ContentAssetType,
+    ContentGenerationJob,
+    GenerationKind,
+)
 from app.services.content import assets as assets_service
 from app.services.content import audit
 from app.services.content import avatars as avatars_service
@@ -326,9 +331,11 @@ def _run_video_piece(
         return asset.url
 
     composed_url = _compose_with_narration(
+        session,
         piece,
         tenant_id=tenant_id,
-        video_url=asset.url,
+        video_job=video_job,
+        asset=asset,
         narration_url=narration_asset.url,
     )
     if composed_url is None:
@@ -438,15 +445,23 @@ def _normalized_base_image(
 
 
 def _compose_with_narration(
+    session: Session,
     piece: ContentPiece,
     *,
     tenant_id: int,
-    video_url: str,
+    video_job: ContentGenerationJob,
+    asset: ContentAsset,
     narration_url: str,
 ) -> Optional[str]:
-    """Mux the narration onto the generated video and upload the result."""
+    """Mux the narration onto the generated video, upload, and register it.
+
+    Registered against the raw video's job so the composed file — the
+    piece's final, non-intermediate asset — has a content_assets row like
+    every other generated output, instead of being a bare storage URL the
+    registry has never heard of.
+    """
     try:
-        video_response = requests.get(video_url, timeout=_FETCH_TIMEOUT)
+        video_response = requests.get(asset.url, timeout=_FETCH_TIMEOUT)
         video_response.raise_for_status()
         audio_response = requests.get(narration_url, timeout=_FETCH_TIMEOUT)
         audio_response.raise_for_status()
@@ -459,7 +474,7 @@ def _compose_with_narration(
         return None
 
     try:
-        uploaded = upload_bytes(
+        composed_upload = upload_bytes(
             tenant_id=tenant_id,
             content_piece_id=piece.id,
             filename="composed.mp4",
@@ -470,8 +485,18 @@ def _compose_with_narration(
         logger.warning(f"could not upload composed video: {exc}")
         return None
 
+    composed_asset = assets_service.create_asset(
+        session,
+        job=video_job,
+        asset_type=ContentAssetType.video,
+        uploaded=composed_upload,
+        provider=asset.provider,
+        model=asset.model,
+        mime_type="video/mp4",
+        is_intermediate=False,
+    )
     logger.info(f"composed narration into video for piece {piece.id}")
-    return uploaded.url
+    return composed_asset.url
 
 
 def _resolve_voice_id(

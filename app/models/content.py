@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
@@ -106,6 +106,11 @@ class ContentCampaign(SQLModel, table=True):
 
 class ContentPiece(SQLModel, table=True):
     __tablename__ = "content_pieces"
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_id", "idempotency_key", name="uq_content_pieces_campaign_idempotency_key"
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     campaign_id: int = Field(foreign_key="content_campaigns.id", index=True)
@@ -119,7 +124,7 @@ class ContentPiece(SQLModel, table=True):
     asset_url: Optional[str] = None
     scheduled_for: Optional[datetime] = None
     posted_at: Optional[datetime] = None
-    idempotency_key: Optional[str] = Field(default=None, unique=True, index=True)
+    idempotency_key: Optional[str] = Field(default=None, index=True)
     generation_prompt: Optional[str] = None
     avatar_id: Optional[int] = Field(default=None, foreign_key="content_avatars.id")
     source_image_piece_id: Optional[int] = Field(
