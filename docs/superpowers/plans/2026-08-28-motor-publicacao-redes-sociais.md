@@ -240,8 +240,8 @@ Em `app/models/content.py`, dentro da classe `ContentPiece` (logo após `posted_
     publication_summary: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 ```
 
-E adicione `JSON` ao import existente no topo do arquivo (`from sqlalchemy import JSON, Column,
-UniqueConstraint`).
+`JSON` já está importado no topo do arquivo (`from sqlalchemy import JSON, Column,
+UniqueConstraint`, linha 6) — não precisa editar o import.
 
 - [ ] **Step 4: Verificar que os módulos importam sem erro**
 
@@ -2059,14 +2059,13 @@ def get_final_asset(session: Session, *, content_piece_id: int) -> Optional[Cont
 def get_social_account_for_piece(
     session: Session, *, piece: ContentPiece, social_account_id: int
 ) -> Optional[ContentSocialAccount]:
+    campaign = session.get(ContentCampaign, piece.campaign_id)
+    if campaign is None:
+        return None
     return session.exec(
-        select(ContentSocialAccount)
-        .join(ContentClient, ContentClient.id == ContentSocialAccount.client_id)
-        .join(ContentCampaign, ContentCampaign.id == piece.campaign_id)
-        .where(
+        select(ContentSocialAccount).where(
             ContentSocialAccount.id == social_account_id,
-            ContentSocialAccount.client_id == ContentCampaign.client_id,
-            ContentCampaign.id == piece.campaign_id,
+            ContentSocialAccount.client_id == campaign.client_id,
             ContentSocialAccount.status == "active",
         )
     ).first()
@@ -2199,7 +2198,8 @@ git commit -m "feat(content): add publication idempotency and per-account resolu
 
 **Interfaces:**
 - Consumes: `ContentSocialPublication`, `PublicationStatus` (Task 1); `PublicationError`,
-  `is_retryable` (Task 2); `get_adapter`, `load_credentials` (Task 3); `get_final_asset` (Task 10);
+  `PublicationErrorCode`, `is_retryable` (Task 2); `get_adapter`, `load_credentials` (Task 3);
+  `get_final_asset` (Task 10);
   `backoff_delay` (`app/services/content/retry.py`, já existente); `ContentPiece`,
   `ContentPieceStatus` (existente); `ContentSocialAccount` (existente); `get_engine`
   (`app/db.py`, já existente).
@@ -2411,6 +2411,34 @@ class TestExecuteClaimedPublication(unittest.TestCase):
 
         self.assertEqual(row.status, PublicationStatus.failed)
 
+    def test_unexpected_exception_during_setup_is_retried_not_left_running(self):
+        """A row claimed as `running` must never get stuck there — even a bug
+        in asset/credential lookup has to resolve to retrying/failed."""
+        row = self._row(attempt_count=1, max_attempts=3)
+        piece = MagicMock(id=10, posted_at=None)
+        account = MagicMock()
+
+        def get_side_effect(model, id_):
+            if model.__name__ == "ContentSocialPublication":
+                return row
+            if model.__name__ == "ContentPiece":
+                return piece
+            if model.__name__ == "ContentSocialAccount":
+                return account
+            return None
+
+        session = MagicMock()
+        session.get.side_effect = get_side_effect
+
+        with patch.object(
+            dispatcher, "get_final_asset", side_effect=RuntimeError("db exploded")
+        ):
+            dispatcher.execute_claimed_publication(session, 1)
+
+        self.assertEqual(row.status, PublicationStatus.retrying)
+        self.assertIsNotNone(row.next_run_at)
+        self.assertEqual(row.error_code, "transient")
+
 
 class TestDispatcherLifecycle(unittest.TestCase):
     def test_start_and_stop_do_not_raise(self):
@@ -2445,7 +2473,7 @@ from app.db import get_engine
 from app.models.content import ContentPiece, ContentPieceStatus, ContentSocialAccount
 from app.models.content_publishing import ContentSocialPublication, PublicationStatus
 from app.services.content import retry
-from app.services.content.publish_errors import PublicationError, is_retryable
+from app.services.content.publish_errors import PublicationError, PublicationErrorCode, is_retryable
 from app.services.content.publications import get_final_asset
 from app.services.content.publishers.base import get_adapter, load_credentials
 
@@ -2584,19 +2612,30 @@ def execute_claimed_publication(session: Session, publication_id: int) -> None:
         return
     piece = session.get(ContentPiece, row.content_piece_id)
     account = session.get(ContentSocialAccount, row.social_account_id)
-    asset = get_final_asset(session, content_piece_id=row.content_piece_id)
-    adapter = get_adapter(row.platform)
-    credentials = load_credentials(account)
 
-    semaphore = _platform_semaphore(row.platform)
-    semaphore.acquire()
+    # Setup (asset/adapter/credential lookup) and the adapter call itself are
+    # both inside this try — a row already marked `running` by the claim
+    # must never be left stuck there. Anything unexpected here still has to
+    # resolve to retrying/failed, not silence.
     try:
-        result = adapter.publish(piece, asset, account, credentials)
+        asset = get_final_asset(session, content_piece_id=row.content_piece_id)
+        adapter = get_adapter(row.platform)
+        credentials = load_credentials(account)
+
+        semaphore = _platform_semaphore(row.platform)
+        semaphore.acquire()
+        try:
+            result = adapter.publish(piece, asset, account, credentials)
+        finally:
+            semaphore.release()
     except PublicationError as error:
         _handle_failure(session, row, piece, error)
         return
-    finally:
-        semaphore.release()
+    except Exception as error:
+        _handle_failure(
+            session, row, piece, PublicationError(PublicationErrorCode.transient, str(error))
+        )
+        return
 
     _handle_success(session, row, piece, result)
 
@@ -2648,7 +2687,7 @@ def stop_dispatcher() -> None:
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `python -m pytest test/services/test_content_publish_dispatcher.py -v`
-Expected: PASS (7 testes)
+Expected: PASS (8 testes)
 
 - [ ] **Step 5: Commit**
 
