@@ -102,5 +102,26 @@ class TestPostForm(unittest.TestCase):
         self.assertIs(result, ok_response)
 
 
+class TestGetBytes(unittest.TestCase):
+    def test_404_response_classifies_as_invalid_params(self):
+        response = MagicMock(status_code=404)
+        response.json.return_value = {"error": {"message": "not found"}}
+
+        with patch.object(base.requests, "get", return_value=response):
+            with self.assertRaises(PublicationError) as ctx:
+                base.get_bytes("https://example.com/asset.jpg")
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.invalid_params)
+
+    def test_network_error_is_classified_as_transient(self):
+        with patch.object(
+            base.requests, "get", side_effect=requests.ConnectionError("boom")
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                base.get_bytes("https://example.com/asset.jpg")
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.transient)
+
+
 if __name__ == "__main__":
     unittest.main()
