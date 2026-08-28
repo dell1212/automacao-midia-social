@@ -19,6 +19,7 @@ from app.controllers.v1.content import (
     models,
     pieces,
     providers,
+    publications,
     social_accounts,
     tenants,
 )
@@ -39,4 +40,5 @@ root_api_router.include_router(campaigns.router)
 root_api_router.include_router(approval_rules.router)
 root_api_router.include_router(pieces.router)
 root_api_router.include_router(providers.router)
+root_api_router.include_router(publications.router)
 root_api_router.include_router(models.router)
