@@ -22,6 +22,13 @@ async def application_lifespan(_: FastAPI):
     """集中处理 API 进程启动恢复和关闭日志。"""
     logger.info("startup event")
 
+    # Fail fast on a malformed model catalog: a broken entry must break boot,
+    # not the first paid generation call.
+    from app.services.content.catalog import get_catalog
+
+    get_catalog()
+    logger.info("content model catalog loaded")
+
     configured_api_key = config.app.get("api_key", "")
     if configured_api_key in (None, ""):
         logger.warning(

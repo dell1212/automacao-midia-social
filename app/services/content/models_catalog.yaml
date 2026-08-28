@@ -1,0 +1,178 @@
+# Global model catalog. Capabilities are intrinsic to each model and identical
+# for every tenant, so this file is platform-owned configuration, not schema.
+# Adding a model is a one-entry change here; no migration needed.
+
+# --- WaveSpeed -------------------------------------------------------------
+- provider: wavespeed
+  kind: image
+  model_id: bytedance/seedream-v4
+  name: Seedream v4
+  is_active: true
+  supports_text_to_image: true
+  supports_image_to_image: true
+  supports_text_to_video: false
+  supports_image_to_video: false
+  supports_reference_image: true
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9", "1:1", "4:5"]
+  supported_resolutions: ["1024", "2048"]
+  max_duration: null
+  cost_config:
+    unit: image
+    price: 0.03
+    currency: USD
+
+- provider: wavespeed
+  kind: video
+  model_id: bytedance/seedance-2.0-fast/text-to-video
+  name: Seedance 2.0 Fast (text-to-video)
+  is_active: true
+  supports_text_to_image: false
+  supports_image_to_image: false
+  supports_text_to_video: true
+  supports_image_to_video: false
+  supports_reference_image: false
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9", "1:1"]
+  supported_resolutions: ["720p", "1080p"]
+  max_duration: 15
+  cost_config:
+    unit: second
+    price: 0.05
+    currency: USD
+
+- provider: wavespeed
+  kind: video
+  model_id: bytedance/seedance-2.0-fast/image-to-video
+  name: Seedance 2.0 Fast (image-to-video)
+  is_active: true
+  supports_text_to_image: false
+  supports_image_to_image: false
+  supports_text_to_video: false
+  supports_image_to_video: true
+  supports_reference_image: true
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9", "1:1"]
+  supported_resolutions: ["720p", "1080p"]
+  max_duration: 15
+  cost_config:
+    unit: second
+    price: 0.06
+    currency: USD
+
+# --- fal.ai ----------------------------------------------------------------
+- provider: falai
+  kind: image
+  model_id: fal-ai/flux/dev
+  name: FLUX.1 [dev]
+  is_active: true
+  supports_text_to_image: true
+  supports_image_to_image: true
+  supports_text_to_video: false
+  supports_image_to_video: false
+  supports_reference_image: true
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9", "1:1", "4:5"]
+  supported_resolutions: ["1024"]
+  max_duration: null
+  cost_config:
+    unit: image
+    price: 0.025
+    currency: USD
+
+- provider: falai
+  kind: video
+  model_id: fal-ai/kling-video/v2/master/text-to-video
+  name: Kling 2.0 Master (text-to-video)
+  is_active: true
+  supports_text_to_image: false
+  supports_image_to_image: false
+  supports_text_to_video: true
+  supports_image_to_video: false
+  supports_reference_image: false
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9", "1:1"]
+  supported_resolutions: ["720p", "1080p"]
+  max_duration: 10
+  cost_config:
+    unit: second
+    price: 0.09
+    currency: USD
+
+- provider: falai
+  kind: video
+  model_id: fal-ai/kling-video/v2/master/image-to-video
+  name: Kling 2.0 Master (image-to-video)
+  is_active: true
+  supports_text_to_image: false
+  supports_image_to_image: false
+  supports_text_to_video: false
+  supports_image_to_video: true
+  supports_reference_image: true
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9", "1:1"]
+  supported_resolutions: ["720p", "1080p"]
+  max_duration: 10
+  cost_config:
+    unit: second
+    price: 0.10
+    currency: USD
+
+# --- Gemini ----------------------------------------------------------------
+- provider: gemini
+  kind: image
+  model_id: gemini-3-pro-image
+  name: Gemini 3 Pro Image
+  is_active: true
+  supports_text_to_image: true
+  supports_image_to_image: true
+  supports_text_to_video: false
+  supports_image_to_video: false
+  supports_reference_image: true
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9", "1:1", "4:5"]
+  supported_resolutions: ["1024", "2048"]
+  max_duration: null
+  cost_config:
+    unit: image
+    price: 0.04
+    currency: USD
+
+- provider: gemini
+  kind: video
+  model_id: veo-3.1-generate-preview
+  name: Veo 3.1
+  is_active: true
+  supports_text_to_image: false
+  supports_image_to_image: false
+  supports_text_to_video: true
+  supports_image_to_video: true
+  supports_reference_image: true
+  supports_avatar: false
+  supported_ratios: ["9:16", "16:9"]
+  supported_resolutions: ["720p", "1080p"]
+  max_duration: 8
+  cost_config:
+    unit: second
+    price: 0.35
+    currency: USD
+
+# --- ElevenLabs ------------------------------------------------------------
+- provider: elevenlabs
+  kind: voice
+  model_id: eleven_multilingual_v2
+  name: Eleven Multilingual v2
+  is_active: true
+  supports_text_to_image: false
+  supports_image_to_image: false
+  supports_text_to_video: false
+  supports_image_to_video: false
+  supports_reference_image: false
+  supports_avatar: true
+  supported_ratios: []
+  supported_resolutions: []
+  max_duration: null
+  cost_config:
+    unit: character
+    price: 0.00018
+    currency: USD

@@ -15,6 +15,7 @@ from app.controllers.v1.content import (
     approval_rules,
     campaigns,
     clients,
+    models,
     pieces,
     social_accounts,
     tenants,
@@ -34,3 +35,4 @@ root_api_router.include_router(social_accounts.router)
 root_api_router.include_router(campaigns.router)
 root_api_router.include_router(approval_rules.router)
 root_api_router.include_router(pieces.router)
+root_api_router.include_router(models.router)
