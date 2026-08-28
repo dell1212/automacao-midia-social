@@ -29,6 +29,11 @@ async def application_lifespan(_: FastAPI):
     get_catalog()
     logger.info("content model catalog loaded")
 
+    from app.services.content.publish_dispatcher import start_dispatcher, stop_dispatcher
+
+    start_dispatcher()
+    logger.info("content publish dispatcher started")
+
     configured_api_key = config.app.get("api_key", "")
     if configured_api_key in (None, ""):
         logger.warning(
@@ -50,6 +55,8 @@ async def application_lifespan(_: FastAPI):
     try:
         yield
     finally:
+        stop_dispatcher()
+        logger.info("content publish dispatcher stopped")
         logger.info("shutdown event")
 
 
