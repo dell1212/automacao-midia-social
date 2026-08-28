@@ -142,7 +142,15 @@ def _handle_success(
     # likely the stale-running sweep firing while this attempt was still
     # genuinely in flight) and owns it now. Writing here would clobber that
     # newer attempt's state with a stale result — drop it instead.
-    current = session.get(ContentSocialPublication, row.id)
+    #
+    # with_for_update=True is not optional here: session.get() without it
+    # hits SQLAlchemy's identity-map shortcut and returns the SAME in-memory
+    # object already loaded as `row`, with no SQL emitted at all — the
+    # comparison below would then always be comparing a value to itself and
+    # could never detect a reclaim. Passing it forces a real SELECT and
+    # holds the lock through the write that follows, closing the gap between
+    # "check" and "write" instead of just moving it.
+    current = session.get(ContentSocialPublication, row.id, with_for_update=True)
     if current is None or current.attempt_count != claimed_attempt_count:
         logger.warning(
             f"publication {row.id} superseded before completion "
@@ -183,8 +191,11 @@ def _handle_failure(
     error: PublicationError,
     claimed_attempt_count: int,
 ) -> None:
-    # Same fencing check as _handle_success, same reason.
-    current = session.get(ContentSocialPublication, row.id)
+    # Same fencing check as _handle_success, same reason — and same
+    # requirement for with_for_update=True (see comment there): without it
+    # this returns the identity-mapped `row` itself and the check can never
+    # fail.
+    current = session.get(ContentSocialPublication, row.id, with_for_update=True)
     if current is None or current.attempt_count != claimed_attempt_count:
         logger.warning(
             f"publication {row.id} superseded before completion "

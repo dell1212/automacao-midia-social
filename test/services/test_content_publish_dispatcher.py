@@ -129,6 +129,20 @@ class TestExecuteClaimedPublication(unittest.TestCase):
             if c.args and c.args[0].__name__ == "ContentPiece" and c.kwargs.get("with_for_update") is True
         ]
         self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
+        # Same requirement for the fencing re-fetch: without with_for_update,
+        # SQLAlchemy's identity-map shortcut returns the same in-memory row
+        # already held, and the attempt_count comparison can never fail —
+        # the fence would be a no-op wearing the shape of a fence.
+        fencing_calls = [
+            c
+            for c in session.get.call_args_list
+            if c.args
+            and c.args[0].__name__ == "ContentSocialPublication"
+            and c.kwargs.get("with_for_update") is True
+        ]
+        self.assertTrue(
+            fencing_calls, "fencing re-fetch was not called with with_for_update=True"
+        )
 
     def test_retryable_failure_schedules_next_run_without_marking_failed(self):
         row = self._row(attempt_count=1, max_attempts=3)
@@ -201,6 +215,16 @@ class TestExecuteClaimedPublication(unittest.TestCase):
             if c.args and c.args[0].__name__ == "ContentPiece" and c.kwargs.get("with_for_update") is True
         ]
         self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
+        fencing_calls = [
+            c
+            for c in session.get.call_args_list
+            if c.args
+            and c.args[0].__name__ == "ContentSocialPublication"
+            and c.kwargs.get("with_for_update") is True
+        ]
+        self.assertTrue(
+            fencing_calls, "fencing re-fetch was not called with with_for_update=True"
+        )
 
     def test_exhausted_retries_marks_failed(self):
         row = self._row(attempt_count=3, max_attempts=3)
