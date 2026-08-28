@@ -3,7 +3,7 @@ import random
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Optional
 from urllib.parse import quote_plus, urlencode, urlsplit, urlunsplit
 
 import requests
@@ -699,6 +699,7 @@ def generate_videos_wavespeed(
     search_term: str,
     minimum_duration: int,
     video_aspect: VideoAspect = VideoAspect.portrait,
+    api_key: Optional[str] = None,
 ) -> List[MaterialInfo]:
     """
     用 WaveSpeed 文生视频模型为一个脚本关键词生成一段素材。
@@ -709,7 +710,9 @@ def generate_videos_wavespeed(
     """
     aspect = VideoAspect(video_aspect)
     video_width, video_height = aspect.to_resolution()
-    api_key = get_api_key("wavespeed_api_keys")
+    # The content module resolves credentials per tenant and passes them in;
+    # the legacy standalone pipeline keeps falling back to the global config.
+    api_key = api_key or get_api_key("wavespeed_api_keys")
     model_id = (
         str(
             config.app.get("wavespeed_text_to_video_model", "")
