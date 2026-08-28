@@ -644,7 +644,6 @@ Expected: FAIL com `ModuleNotFoundError: No module named 'app.services.content.p
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 import requests
 
@@ -762,11 +761,11 @@ def post_json(url: str, json_body: dict, *, headers: dict, timeout=(10, 60)):
 def get_bytes(url: str, *, timeout=(10, 120)) -> bytes:
     try:
         response = requests.get(url, timeout=timeout)
-        response.raise_for_status()
     except requests.RequestException as exc:
         raise PublicationError(
             PublicationErrorCode.transient, f"failed to fetch asset: {exc}"
         ) from exc
+    raise_for_response(response)
     return response.content
 ```
 
