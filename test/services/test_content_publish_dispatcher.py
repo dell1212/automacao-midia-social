@@ -119,6 +119,16 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         self.assertEqual(row.platform_post_id, "p1")
         self.assertEqual(piece.status, ContentPieceStatus.posted)
         self.assertIsNotNone(piece.posted_at)
+        # The summary recompute+write must happen under a row lock, or two
+        # workers finishing near-simultaneously on the same piece can
+        # silently overwrite each other's result — removing with_for_update
+        # must fail this test, not just look fine.
+        piece_lock_calls = [
+            c
+            for c in session.get.call_args_list
+            if c.args and c.args[0].__name__ == "ContentPiece" and c.kwargs.get("with_for_update") is True
+        ]
+        self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
 
     def test_retryable_failure_schedules_next_run_without_marking_failed(self):
         row = self._row(attempt_count=1, max_attempts=3)
@@ -185,6 +195,12 @@ class TestExecuteClaimedPublication(unittest.TestCase):
 
         self.assertEqual(row.status, PublicationStatus.failed)
         self.assertEqual(row.error_code, "invalid_params")
+        piece_lock_calls = [
+            c
+            for c in session.get.call_args_list
+            if c.args and c.args[0].__name__ == "ContentPiece" and c.kwargs.get("with_for_update") is True
+        ]
+        self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
 
     def test_exhausted_retries_marks_failed(self):
         row = self._row(attempt_count=3, max_attempts=3)
@@ -281,11 +297,21 @@ class TestExecuteClaimedPublication(unittest.TestCase):
                     ):
                         dispatcher.execute_claimed_publication(session, 1)
 
+        # Acquire ALL permits, not just one — with PLATFORM_CONCURRENCY=2, a
+        # single leaked permit still leaves 1 available and a "was at least
+        # one free" check wouldn't catch it. Draining every permit is the
+        # only way this test actually fails if the finally-release were
+        # removed.
         semaphore = dispatcher._platform_semaphore(row.platform)
-        acquired = semaphore.acquire(blocking=False)
-        self.assertTrue(acquired, "semaphore was not released after adapter.publish raised")
-        if acquired:
-            semaphore.release()
+        acquired = [
+            semaphore.acquire(blocking=False) for _ in range(dispatcher.PLATFORM_CONCURRENCY)
+        ]
+        self.assertTrue(
+            all(acquired), "semaphore permit(s) leaked after adapter.publish raised"
+        )
+        for was_acquired in acquired:
+            if was_acquired:
+                semaphore.release()
 
 
 class TestDispatcherLifecycle(unittest.TestCase):
