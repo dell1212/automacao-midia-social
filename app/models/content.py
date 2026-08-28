@@ -124,6 +124,7 @@ class ContentPiece(SQLModel, table=True):
     asset_url: Optional[str] = None
     scheduled_for: Optional[datetime] = None
     posted_at: Optional[datetime] = None
+    publication_summary: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     idempotency_key: Optional[str] = Field(default=None, index=True)
     generation_prompt: Optional[str] = None
     avatar_id: Optional[int] = Field(default=None, foreign_key="content_avatars.id")
