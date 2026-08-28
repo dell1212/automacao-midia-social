@@ -494,3 +494,11 @@ open_task_folder_on_completion = true
 #   SUPABASE_URL=https://<project-ref>.supabase.co
 #   SUPABASE_SERVICE_ROLE_KEY=<service role key>
 #   CONTENT_STORAGE_BUCKET=content-assets   # optional, defaults to content-assets
+
+# Content module — social publishing (sub-project 3).
+# These are secrets and must be set as environment variables, never here:
+#   CONTENT_PUBLISH_WORKERS=4                       # optional, shared thread pool size
+#   CONTENT_PUBLISH_PLATFORM_CONCURRENCY=2           # optional, per-platform semaphore limit (process-local)
+#   CONTENT_PUBLISH_DISPATCH_INTERVAL_SECONDS=2      # optional, dispatcher poll interval
+#   CONTENT_PUBLISH_DISPATCH_BATCH_SIZE=4            # optional, defaults to CONTENT_PUBLISH_WORKERS
+#   CONTENT_PUBLISH_STALE_RUNNING_SECONDS=1800       # optional, reclaim window for rows stuck in running
