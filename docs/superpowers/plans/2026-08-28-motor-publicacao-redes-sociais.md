@@ -2354,13 +2354,11 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         # the fence would be a no-op wearing the shape of a fence.
         fencing_calls = [
             c
-            for c in session.get.call_args_list
-            if c.args
-            and c.args[0].__name__ == "ContentSocialPublication"
-            and c.kwargs.get("with_for_update") is True
+            for c in session.refresh.call_args_list
+            if c.args and c.args[0] is row and c.kwargs.get("with_for_update") is True
         ]
         self.assertTrue(
-            fencing_calls, "fencing re-fetch was not called with with_for_update=True"
+            fencing_calls, "fencing check did not call session.refresh(row, with_for_update=True)"
         )
 
     def test_retryable_failure_schedules_next_run_without_marking_failed(self):
@@ -2436,13 +2434,11 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
         fencing_calls = [
             c
-            for c in session.get.call_args_list
-            if c.args
-            and c.args[0].__name__ == "ContentSocialPublication"
-            and c.kwargs.get("with_for_update") is True
+            for c in session.refresh.call_args_list
+            if c.args and c.args[0] is row and c.kwargs.get("with_for_update") is True
         ]
         self.assertTrue(
-            fencing_calls, "fencing re-fetch was not called with with_for_update=True"
+            fencing_calls, "fencing check did not call session.refresh(row, with_for_update=True)"
         )
 
     def test_exhausted_retries_marks_failed(self):
@@ -2721,21 +2717,25 @@ def _handle_success(
     # genuinely in flight) and owns it now. Writing here would clobber that
     # newer attempt's state with a stale result — drop it instead.
     #
-    # with_for_update=True is not optional here: session.get() without it
-    # hits SQLAlchemy's identity-map shortcut and returns the SAME in-memory
-    # object already loaded as `row`, with no SQL emitted at all — the
-    # comparison below would then always be comparing a value to itself and
-    # could never detect a reclaim. Passing it forces a real SELECT and
-    # holds the lock through the write that follows, closing the gap between
-    # "check" and "write" instead of just moving it.
-    current = session.get(ContentSocialPublication, row.id, with_for_update=True)
-    if current is None or current.attempt_count != claimed_attempt_count:
+    # session.refresh(), not session.get(): session.get(Model, id,
+    # with_for_update=True) forces a real SELECT but does NOT repopulate
+    # attributes already loaded on an existing identity-mapped instance
+    # unless populate_existing=True is *also* given — a footgun that made an
+    # earlier version of this exact fencing check just as inert as having no
+    # lock at all. session.refresh() is the tool actually meant for "make
+    # this in-memory row reflect the current DB row": it unconditionally
+    # re-reads every attribute, no separate opt-in required.
+    try:
+        session.refresh(row, with_for_update=True)
+    except Exception:
+        logger.warning(f"publication {row.id} vanished before completion — dropping stale success")
+        return
+    if row.attempt_count != claimed_attempt_count:
         logger.warning(
             f"publication {row.id} superseded before completion "
             f"(attempt {claimed_attempt_count} no longer current) — dropping stale success"
         )
         return
-    row = current
     row.status = PublicationStatus.succeeded
     row.platform_post_id = result.platform_post_id
     row.platform_post_url = result.platform_post_url
@@ -2769,18 +2769,22 @@ def _handle_failure(
     error: PublicationError,
     claimed_attempt_count: int,
 ) -> None:
-    # Same fencing check as _handle_success, same reason — and same
-    # requirement for with_for_update=True (see comment there): without it
-    # this returns the identity-mapped `row` itself and the check can never
-    # fail.
-    current = session.get(ContentSocialPublication, row.id, with_for_update=True)
-    if current is None or current.attempt_count != claimed_attempt_count:
+    # Same fencing check as _handle_success, same reason — session.refresh(),
+    # not session.get(), for the same reason documented there: get() with
+    # with_for_update=True alone does not repopulate already-loaded
+    # attributes without populate_existing=True too, which made an earlier
+    # version of this check inert.
+    try:
+        session.refresh(row, with_for_update=True)
+    except Exception:
+        logger.warning(f"publication {row.id} vanished before completion — dropping stale failure")
+        return
+    if row.attempt_count != claimed_attempt_count:
         logger.warning(
             f"publication {row.id} superseded before completion "
             f"(attempt {claimed_attempt_count} no longer current) — dropping stale failure"
         )
         return
-    row = current
     row.error_code = error.code.value
     row.error_message = error.message
     row.updated_at = datetime.utcnow()
