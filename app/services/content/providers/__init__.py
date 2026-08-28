@@ -2,11 +2,13 @@ from types import ModuleType
 from typing import Any
 
 from app.services.content.errors import GenerationError, GenerationErrorCode
-from app.services.content.providers import wavespeed
+from app.services.content.providers import falai, gemini, wavespeed
 from app.services.content.providers.base import GeneratedAsset
 
 _ADAPTERS: dict[str, ModuleType] = {
     "wavespeed": wavespeed,
+    "falai": falai,
+    "gemini": gemini,
 }
 
 _KIND_TO_FUNCTION = {
