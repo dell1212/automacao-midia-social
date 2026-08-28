@@ -2224,6 +2224,8 @@ import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.content import ContentPieceStatus
 from app.models.content_publishing import PublicationStatus
 from app.services.content import publish_dispatcher as dispatcher
@@ -2242,6 +2244,27 @@ class TestClaimDuePublications(unittest.TestCase):
         self.assertEqual(row.status, PublicationStatus.running)
         self.assertEqual(row.attempt_count, 1)
         session.commit.assert_called_once()
+
+    def test_claim_statement_uses_skip_locked_and_reclaims_stale_running(self):
+        """The one property this whole task exists to guarantee — assert on
+        the actual compiled SQL, not just the mocked effect. A future edit
+        that silently drops with_for_update(skip_locked=True) must fail this
+        test, not just look fine in a mocked unit test."""
+        session = MagicMock()
+        session.exec.return_value.all.return_value = []
+
+        dispatcher.claim_due_publications(session, limit=5)
+
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("FOR UPDATE SKIP LOCKED", compiled)
+        self.assertIn("NULLS FIRST", compiled)
+        self.assertIn("STATUS", compiled)
+        self.assertIn("RUNNING", compiled)
 
 
 class TestRecomputePublicationSummary(unittest.TestCase):
@@ -2447,6 +2470,45 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         self.assertIsNotNone(row.next_run_at)
         self.assertEqual(row.error_code, "transient")
 
+    def test_semaphore_is_released_after_publish_raises(self):
+        """If the semaphore leaked on failure, a same-platform publication
+        would eventually deadlock waiting for a permit that never comes
+        back — this must hold even on the error path, not just success."""
+        row = self._row()
+        piece = MagicMock(id=10, posted_at=None)
+        account = MagicMock()
+
+        def get_side_effect(model, id_):
+            if model.__name__ == "ContentSocialPublication":
+                return row
+            if model.__name__ == "ContentPiece":
+                return piece
+            if model.__name__ == "ContentSocialAccount":
+                return account
+            return None
+
+        session = MagicMock()
+        session.get.side_effect = get_side_effect
+
+        adapter = MagicMock()
+        adapter.publish.side_effect = PublicationError(
+            PublicationErrorCode.invalid_params, "bad payload"
+        )
+
+        with patch.object(dispatcher, "get_final_asset", return_value=MagicMock()):
+            with patch.object(dispatcher, "get_adapter", return_value=adapter):
+                with patch.object(dispatcher, "load_credentials", return_value={}):
+                    with patch.object(
+                        dispatcher, "recompute_publication_summary", return_value={}
+                    ):
+                        dispatcher.execute_claimed_publication(session, 1)
+
+        semaphore = dispatcher._platform_semaphore(row.platform)
+        acquired = semaphore.acquire(blocking=False)
+        self.assertTrue(acquired, "semaphore was not released after adapter.publish raised")
+        if acquired:
+            semaphore.release()
+
 
 class TestDispatcherLifecycle(unittest.TestCase):
     def test_start_and_stop_do_not_raise(self):
@@ -2474,7 +2536,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from loguru import logger
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlmodel import Session, select
 
 from app.db import get_engine
@@ -2491,6 +2553,12 @@ DISPATCH_INTERVAL_SECONDS = float(
 WORKERS = int(os.environ.get("CONTENT_PUBLISH_WORKERS", 4))
 BATCH_SIZE = int(os.environ.get("CONTENT_PUBLISH_DISPATCH_BATCH_SIZE", WORKERS))
 PLATFORM_CONCURRENCY = int(os.environ.get("CONTENT_PUBLISH_PLATFORM_CONCURRENCY", 2))
+# A row a worker never finishes (process killed, deploy, stuck thread) has no
+# other way back into the claim query — queued/retrying is not enough. A
+# grace window lets a later tick (this process or a fresh one after restart)
+# reclaim it. Consumes an attempt like any other claim, so it's bounded by
+# max_attempts, not an unbounded retry loop.
+STALE_RUNNING_SECONDS = int(os.environ.get("CONTENT_PUBLISH_STALE_RUNNING_SECONDS", 300))
 
 _executor = ThreadPoolExecutor(
     max_workers=WORKERS, thread_name_prefix="mpt-content-publish"
@@ -2513,18 +2581,33 @@ def claim_due_publications(
 ) -> List[ContentSocialPublication]:
     """Atomically claim due rows so two dispatcher ticks (or replicas) never
     run the same publication — SKIP LOCKED, not application-level locking.
+
+    Also reclaims rows stuck in `running` past `STALE_RUNNING_SECONDS` — the
+    only recovery path for a row whose worker never finished (process
+    restart, deploy, stuck thread). `attempt_count` already increments on
+    every claim, so a reclaim consumes an attempt like any other and is
+    bounded by `max_attempts`, not an unbounded loop.
     """
     now = datetime.utcnow()
+    stale_cutoff = now - timedelta(seconds=STALE_RUNNING_SECONDS)
     statement = (
         select(ContentSocialPublication)
         .where(
-            ContentSocialPublication.status.in_(
-                [PublicationStatus.queued, PublicationStatus.retrying]
-            ),
             or_(
-                ContentSocialPublication.next_run_at.is_(None),
-                ContentSocialPublication.next_run_at <= now,
-            ),
+                and_(
+                    ContentSocialPublication.status.in_(
+                        [PublicationStatus.queued, PublicationStatus.retrying]
+                    ),
+                    or_(
+                        ContentSocialPublication.next_run_at.is_(None),
+                        ContentSocialPublication.next_run_at <= now,
+                    ),
+                ),
+                and_(
+                    ContentSocialPublication.status == PublicationStatus.running,
+                    ContentSocialPublication.updated_at < stale_cutoff,
+                ),
+            )
         )
         .order_by(ContentSocialPublication.next_run_at.nulls_first())
         .limit(limit)
@@ -2574,6 +2657,13 @@ def _handle_success(session: Session, row: ContentSocialPublication, piece: Cont
     session.add(row)
     session.commit()
 
+    # Lock the piece row for the recompute+write. Without this, two workers
+    # finishing near-simultaneously on the same piece (the normal case for a
+    # cross-post to N platforms) each recompute from their own read and the
+    # later commit silently overwrites the earlier one's result — permanent
+    # drift, not a transient race, since nothing recomputes again until the
+    # next publish event on that piece.
+    piece = session.get(ContentPiece, piece.id, with_for_update=True)
     piece.publication_summary = recompute_publication_summary(
         session, content_piece_id=piece.id
     )
@@ -2606,6 +2696,9 @@ def _handle_failure(
     session.add(row)
     session.commit()
 
+    # Same piece-row lock as _handle_success, same reason: concurrent
+    # workers on the same piece must not race a read-recompute-write.
+    piece = session.get(ContentPiece, piece.id, with_for_update=True)
     piece.publication_summary = recompute_publication_summary(
         session, content_piece_id=piece.id
     )
@@ -2695,7 +2788,7 @@ def stop_dispatcher() -> None:
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `python -m pytest test/services/test_content_publish_dispatcher.py -v`
-Expected: PASS (8 testes)
+Expected: PASS (10 testes)
 
 - [ ] **Step 5: Commit**
 
@@ -2915,6 +3008,7 @@ No final de `config.example.toml`, logo após o bloco de comentário do Supabase
 #   CONTENT_PUBLISH_PLATFORM_CONCURRENCY=2           # optional, per-platform semaphore limit (process-local)
 #   CONTENT_PUBLISH_DISPATCH_INTERVAL_SECONDS=2      # optional, dispatcher poll interval
 #   CONTENT_PUBLISH_DISPATCH_BATCH_SIZE=4            # optional, defaults to CONTENT_PUBLISH_WORKERS
+#   CONTENT_PUBLISH_STALE_RUNNING_SECONDS=300        # optional, reclaim window for rows stuck in running
 ```
 
 - [ ] **Step 2: Commit**
