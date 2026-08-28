@@ -1669,11 +1669,11 @@ class TestLinkedInPublish(unittest.TestCase):
             with patch(
                 "app.services.content.publishers.linkedin.post_json",
                 side_effect=[register_response, post_response],
-            ):
+            ) as post_json:
                 with patch(
                     "app.services.content.publishers.linkedin.requests.put",
                     return_value=upload_result,
-                ):
+                ) as requests_put:
                     result = LinkedInAdapter().publish(
                         _piece(),
                         _asset(),
@@ -1682,6 +1682,15 @@ class TestLinkedInPublish(unittest.TestCase):
                     )
 
         self.assertEqual(result.platform_post_id, "urn:li:share:123")
+        # The uploadUrl/asset URN from step 1's response must thread into
+        # steps 3 and 4, not get hardcoded or dropped — a wrong or stale
+        # URN here would silently attach the wrong media to the post.
+        self.assertEqual(requests_put.call_args.args[0], "https://upload.linkedin.com/put-here")
+        ugc_post_body = post_json.call_args_list[1].args[1]
+        self.assertEqual(
+            ugc_post_body["specificContent"]["com.linkedin.ugc.ShareContent"]["media"][0]["media"],
+            "urn:li:digitalmediaAsset:abc",
+        )
 
 
 if __name__ == "__main__":
