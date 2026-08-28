@@ -9,6 +9,7 @@ from sqlmodel import SQLModel
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import app.models.content  # noqa: E402,F401  (registra as tabelas no metadata)
+import app.models.content_generation  # noqa: E402,F401  (registers generation tables)
 
 config = context.config
 

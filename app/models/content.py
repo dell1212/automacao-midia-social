@@ -22,6 +22,7 @@ class ContentPieceType(str, Enum):
 
 class ContentPieceStatus(str, Enum):
     draft = "draft"
+    generating = "generating"
     pending_approval = "pending_approval"
     approved = "approved"
     rejected = "rejected"
@@ -32,6 +33,25 @@ class ContentPieceStatus(str, Enum):
 class ApprovalAction(str, Enum):
     auto_approve = "auto_approve"
     require_review = "require_review"
+
+
+class ContentCategory(str, Enum):
+    medical = "medical"
+    pharmaceutical = "pharmaceutical"
+    financial = "financial"
+    insurance = "insurance"
+    legal = "legal"
+    alcohol = "alcohol"
+    gambling = "gambling"
+    political = "political"
+    regulated_product = "regulated_product"
+
+
+class RiskLevel(str, Enum):
+    none = "none"
+    low = "low"
+    medium = "medium"
+    high = "high"
 
 
 # --- Tabelas ---------------------------------------------------------------
@@ -100,6 +120,27 @@ class ContentPiece(SQLModel, table=True):
     scheduled_for: Optional[datetime] = None
     posted_at: Optional[datetime] = None
     idempotency_key: Optional[str] = Field(default=None, unique=True, index=True)
+    generation_prompt: Optional[str] = None
+    avatar_id: Optional[int] = Field(default=None, foreign_key="content_avatars.id")
+    source_image_piece_id: Optional[int] = Field(
+        default=None, foreign_key="content_pieces.id"
+    )
+    voice_id: Optional[str] = None
+    is_synthetic_media: bool = Field(default=False)
+    content_category: Optional[ContentCategory] = Field(
+        default=None,
+        sa_column=Column(SAEnum(ContentCategory, name="content_category")),
+    )
+    risk_level: RiskLevel = Field(
+        default=RiskLevel.none,
+        sa_column=Column(
+            SAEnum(RiskLevel, name="content_risk_level"),
+            nullable=False,
+            server_default="none",
+        ),
+    )
+    requires_human_review: bool = Field(default=False)
+    policy_version: str = Field(default="v1")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -209,12 +250,36 @@ class ApprovalRuleRead(BaseModel):
     created_at: datetime
 
 
+class ContentPieceCreate(BaseModel):
+    campaign_id: int
+    type: ContentPieceType
+    idempotency_key: str
+    is_synthetic_media: bool
+    generation_prompt: Optional[str] = None
+    avatar_id: Optional[int] = None
+    source_image_piece_id: Optional[int] = None
+    voice_id: Optional[str] = None
+    content_category: Optional[ContentCategory] = None
+    aspect_ratio: str = "9:16"
+    resolution: Optional[str] = None
+    duration: Optional[int] = None
+
+
 class ContentPieceRead(BaseModel):
     id: int
     campaign_id: int
     type: ContentPieceType
     status: ContentPieceStatus
     asset_url: Optional[str]
+    generation_prompt: Optional[str]
+    avatar_id: Optional[int]
+    source_image_piece_id: Optional[int]
+    voice_id: Optional[str]
+    is_synthetic_media: bool
+    content_category: Optional[ContentCategory]
+    risk_level: RiskLevel
+    requires_human_review: bool
+    policy_version: str
     scheduled_for: Optional[datetime]
     posted_at: Optional[datetime]
     created_at: datetime
