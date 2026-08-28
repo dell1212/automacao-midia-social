@@ -2307,11 +2307,8 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         piece = MagicMock(id=10, posted_at=None, status=ContentPieceStatus.approved)
         account = MagicMock()
         session = MagicMock()
-        session.get.side_effect = lambda model, id_: {
-            ("ContentSocialPublication", 1): row,
-        }.get((model.__name__, id_), None)
 
-        def get_side_effect(model, id_):
+        def get_side_effect(model, id_, **kwargs):
             if model.__name__ == "ContentSocialPublication":
                 return row
             if model.__name__ == "ContentPiece":
@@ -2341,6 +2338,16 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         self.assertEqual(row.platform_post_id, "p1")
         self.assertEqual(piece.status, ContentPieceStatus.posted)
         self.assertIsNotNone(piece.posted_at)
+        # The summary recompute+write must happen under a row lock, or two
+        # workers finishing near-simultaneously on the same piece can
+        # silently overwrite each other's result — removing with_for_update
+        # must fail this test, not just look fine.
+        piece_lock_calls = [
+            c
+            for c in session.get.call_args_list
+            if c.args and c.args[0].__name__ == "ContentPiece" and c.kwargs.get("with_for_update") is True
+        ]
+        self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
 
     def test_retryable_failure_schedules_next_run_without_marking_failed(self):
         row = self._row(attempt_count=1, max_attempts=3)
@@ -2378,7 +2385,7 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         piece = MagicMock(id=10, posted_at=None)
         account = MagicMock()
 
-        def get_side_effect(model, id_):
+        def get_side_effect(model, id_, **kwargs):
             if model.__name__ == "ContentSocialPublication":
                 return row
             if model.__name__ == "ContentPiece":
@@ -2407,6 +2414,12 @@ class TestExecuteClaimedPublication(unittest.TestCase):
 
         self.assertEqual(row.status, PublicationStatus.failed)
         self.assertEqual(row.error_code, "invalid_params")
+        piece_lock_calls = [
+            c
+            for c in session.get.call_args_list
+            if c.args and c.args[0].__name__ == "ContentPiece" and c.kwargs.get("with_for_update") is True
+        ]
+        self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
 
     def test_exhausted_retries_marks_failed(self):
         row = self._row(attempt_count=3, max_attempts=3)
@@ -2503,11 +2516,21 @@ class TestExecuteClaimedPublication(unittest.TestCase):
                     ):
                         dispatcher.execute_claimed_publication(session, 1)
 
+        # Acquire ALL permits, not just one — with PLATFORM_CONCURRENCY=2, a
+        # single leaked permit still leaves 1 available and a "was at least
+        # one free" check wouldn't catch it. Draining every permit is the
+        # only way this test actually fails if the finally-release were
+        # removed.
         semaphore = dispatcher._platform_semaphore(row.platform)
-        acquired = semaphore.acquire(blocking=False)
-        self.assertTrue(acquired, "semaphore was not released after adapter.publish raised")
-        if acquired:
-            semaphore.release()
+        acquired = [
+            semaphore.acquire(blocking=False) for _ in range(dispatcher.PLATFORM_CONCURRENCY)
+        ]
+        self.assertTrue(
+            all(acquired), "semaphore permit(s) leaked after adapter.publish raised"
+        )
+        for was_acquired in acquired:
+            if was_acquired:
+                semaphore.release()
 
 
 class TestDispatcherLifecycle(unittest.TestCase):
@@ -2558,7 +2581,20 @@ PLATFORM_CONCURRENCY = int(os.environ.get("CONTENT_PUBLISH_PLATFORM_CONCURRENCY"
 # grace window lets a later tick (this process or a fresh one after restart)
 # reclaim it. Consumes an attempt like any other claim, so it's bounded by
 # max_attempts, not an unbounded retry loop.
-STALE_RUNNING_SECONDS = int(os.environ.get("CONTENT_PUBLISH_STALE_RUNNING_SECONDS", 300))
+#
+# The default has real margin above the worst realistic single-attempt wall
+# time, not just "a while": get_bytes' fetch timeout is (10, 120) and the
+# slowest adapters' upload timeout is (10, 300) — YouTube/LinkedIn — so one
+# attempt's HTTP calls alone can take up to ~430s before any semaphore wait
+# is even counted. Setting this too low doesn't just strand a row longer;
+# it reclaims a row that is still genuinely in flight, and a second worker
+# then calls the same platform's publish a second time — an actual duplicate
+# post, which is worse than the stuck-row problem this exists to fix. The
+# `claimed_attempt_count` fencing in execute_claimed_publication/_handle_*
+# is the backstop if this margin is ever wrong under real load, but it does
+# not prevent the duplicate call to the platform itself, only the duplicate
+# bookkeeping — the margin is the real defense.
+STALE_RUNNING_SECONDS = int(os.environ.get("CONTENT_PUBLISH_STALE_RUNNING_SECONDS", 1800))
 
 _executor = ThreadPoolExecutor(
     max_workers=WORKERS, thread_name_prefix="mpt-content-publish"
@@ -2648,7 +2684,26 @@ def recompute_publication_summary(session: Session, *, content_piece_id: int) ->
     return summary
 
 
-def _handle_success(session: Session, row: ContentSocialPublication, piece: ContentPiece, result) -> None:
+def _handle_success(
+    session: Session,
+    row: ContentSocialPublication,
+    piece: ContentPiece,
+    result,
+    claimed_attempt_count: int,
+) -> None:
+    # Fencing check: if attempt_count no longer matches what THIS call's
+    # claim produced, another worker has already reclaimed the row (most
+    # likely the stale-running sweep firing while this attempt was still
+    # genuinely in flight) and owns it now. Writing here would clobber that
+    # newer attempt's state with a stale result — drop it instead.
+    current = session.get(ContentSocialPublication, row.id)
+    if current is None or current.attempt_count != claimed_attempt_count:
+        logger.warning(
+            f"publication {row.id} superseded before completion "
+            f"(attempt {claimed_attempt_count} no longer current) — dropping stale success"
+        )
+        return
+    row = current
     row.status = PublicationStatus.succeeded
     row.platform_post_id = result.platform_post_id
     row.platform_post_url = result.platform_post_url
@@ -2676,8 +2731,21 @@ def _handle_success(session: Session, row: ContentSocialPublication, piece: Cont
 
 
 def _handle_failure(
-    session: Session, row: ContentSocialPublication, piece: ContentPiece, error: PublicationError
+    session: Session,
+    row: ContentSocialPublication,
+    piece: ContentPiece,
+    error: PublicationError,
+    claimed_attempt_count: int,
 ) -> None:
+    # Same fencing check as _handle_success, same reason.
+    current = session.get(ContentSocialPublication, row.id)
+    if current is None or current.attempt_count != claimed_attempt_count:
+        logger.warning(
+            f"publication {row.id} superseded before completion "
+            f"(attempt {claimed_attempt_count} no longer current) — dropping stale failure"
+        )
+        return
+    row = current
     row.error_code = error.code.value
     row.error_message = error.message
     row.updated_at = datetime.utcnow()
@@ -2711,6 +2779,11 @@ def execute_claimed_publication(session: Session, publication_id: int) -> None:
     row = session.get(ContentSocialPublication, publication_id)
     if row is None:
         return
+    # Captured once, right after claim — the fencing token _handle_success/
+    # _handle_failure use to detect whether this row was reclaimed by
+    # another worker (a stale-running sweep firing while this attempt was
+    # still genuinely in flight) while this call was in progress.
+    claimed_attempt_count = row.attempt_count
     piece = session.get(ContentPiece, row.content_piece_id)
     account = session.get(ContentSocialAccount, row.social_account_id)
 
@@ -2730,15 +2803,19 @@ def execute_claimed_publication(session: Session, publication_id: int) -> None:
         finally:
             semaphore.release()
     except PublicationError as error:
-        _handle_failure(session, row, piece, error)
+        _handle_failure(session, row, piece, error, claimed_attempt_count)
         return
     except Exception as error:
         _handle_failure(
-            session, row, piece, PublicationError(PublicationErrorCode.transient, str(error))
+            session,
+            row,
+            piece,
+            PublicationError(PublicationErrorCode.transient, str(error)),
+            claimed_attempt_count,
         )
         return
 
-    _handle_success(session, row, piece, result)
+    _handle_success(session, row, piece, result, claimed_attempt_count)
 
 
 def _run_and_log(publication_id: int) -> None:
@@ -3008,7 +3085,7 @@ No final de `config.example.toml`, logo após o bloco de comentário do Supabase
 #   CONTENT_PUBLISH_PLATFORM_CONCURRENCY=2           # optional, per-platform semaphore limit (process-local)
 #   CONTENT_PUBLISH_DISPATCH_INTERVAL_SECONDS=2      # optional, dispatcher poll interval
 #   CONTENT_PUBLISH_DISPATCH_BATCH_SIZE=4            # optional, defaults to CONTENT_PUBLISH_WORKERS
-#   CONTENT_PUBLISH_STALE_RUNNING_SECONDS=300        # optional, reclaim window for rows stuck in running
+#   CONTENT_PUBLISH_STALE_RUNNING_SECONDS=1800       # optional, reclaim window for rows stuck in running
 ```
 
 - [ ] **Step 2: Commit**
