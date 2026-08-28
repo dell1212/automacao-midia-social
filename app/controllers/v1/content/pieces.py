@@ -43,12 +43,21 @@ def create_piece(
             detail="image pieces require generation_prompt or avatar_id",
         )
 
+    avatar = None
     if payload.avatar_id is not None:
         avatar = avatars_service.get_avatar(
             session, tenant_id=tenant.id, avatar_id=payload.avatar_id
         )
         if avatar is None:
             raise HTTPException(status_code=404, detail="Avatar not found")
+
+    if payload.type == ContentPieceType.audio:
+        has_voice = payload.voice_id or (avatar is not None and avatar.voice_id)
+        if not has_voice:
+            raise HTTPException(
+                status_code=422,
+                detail="audio pieces require voice_id or an avatar_id with a configured voice",
+            )
 
     if payload.source_image_piece_id is not None:
         source = pieces_service.get_piece(

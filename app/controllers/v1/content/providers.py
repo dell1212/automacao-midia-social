@@ -15,7 +15,7 @@ from app.models.content_generation import (
 from app.services.content import audit
 from app.services.content import generation_providers as providers_service
 from app.services.content import providers as provider_adapters
-from app.services.content.errors import GenerationError
+from app.services.content.errors import GenerationError, is_retryable
 
 router = new_router(dependencies=[Depends(content_auth.verify_tenant_token)])
 
@@ -33,6 +33,12 @@ def create_provider(
             provider=payload.provider.value, api_key=payload.credentials
         )
     except GenerationError as error:
+        if is_retryable(error.code):
+            # rate_limit/transient/timeout mean the provider was briefly
+            # unreachable, not that the credential is wrong — telling the
+            # tenant "your key is bad" here would send them chasing a
+            # problem that isn't theirs.
+            raise HTTPException(status_code=503, detail=error.message)
         raise HTTPException(status_code=422, detail=error.message)
 
     row = providers_service.create_generation_provider(

@@ -31,6 +31,7 @@ from datetime import datetime
 
 from app.models.content import ContentPieceStatus, ContentPieceType
 from app.models.content_generation import GenerationKind
+from app.services.content import audit
 from app.services.content.pipeline import schedule_piece
 from app.services.content.policy import classify
 
@@ -109,11 +110,23 @@ def create_piece(session: Session, *, tenant_id: int, payload) -> tuple[ContentP
 
     # Request parameters live on the call, not on the row: aspect_ratio and
     # friends describe this generation, not the piece itself.
-    schedule_piece(
+    scheduled = schedule_piece(
         piece.id,
         piece_type=payload.type,
         aspect_ratio=payload.aspect_ratio,
         resolution=payload.resolution,
         duration=payload.duration,
     )
+    if not scheduled:
+        # The pending-queue is saturated: no job was ever created, so without
+        # this the piece sits in `generating` with nothing to show for it and
+        # no way for an operator to distinguish it from one still in flight.
+        audit.write_audit_log(
+            session,
+            tenant_id=tenant_id,
+            entity_type="content_piece",
+            entity_id=piece.id,
+            action="generation_queue_saturated",
+            actor="system:generation",
+        )
     return piece, True

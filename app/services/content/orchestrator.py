@@ -1,7 +1,9 @@
+import io
 import time
 from typing import Optional
 
 from loguru import logger
+from PIL import Image
 from sqlmodel import Session
 
 from app.models.content_generation import (
@@ -39,6 +41,21 @@ def estimate_cost(
             return None, currency
         return round(float(price) * float(units), 6), currency
     return None, None
+
+
+def _probe_image_dimensions(data: bytes) -> tuple[Optional[int], Optional[int]]:
+    """Best-effort image dimensions for an adapter that didn't report them.
+
+    No adapter's GeneratedAsset currently carries width/height, so without
+    this every image asset's dimensions are stored as NULL even though the
+    bytes are right there. Never fatal: dimensions are a nice-to-have on the
+    asset registry, not something worth failing a generation over.
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            return image.size
+    except Exception:  # noqa: BLE001 - dimensions are best-effort only
+        return None, None
 
 
 def run_job(
@@ -180,6 +197,10 @@ def run_job(
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 
+        width, height = generated.width, generated.height
+        if asset_type == ContentAssetType.image and (width is None or height is None):
+            width, height = _probe_image_dimensions(generated.data)
+
         asset = assets_service.create_asset(
             session,
             job=job,
@@ -188,8 +209,8 @@ def run_job(
             provider=candidate.provider,
             model=candidate.model_id,
             mime_type=generated.mime_type,
-            width=generated.width,
-            height=generated.height,
+            width=width,
+            height=height,
             duration=generated.duration,
             is_intermediate=is_intermediate,
         )
