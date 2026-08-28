@@ -1,13 +1,100 @@
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Response
 from sqlmodel import Session
 
 from app.controllers import content_auth
 from app.controllers.v1.base import new_router
 from app.db import get_session
-from app.models.content import ContentPieceRead, ContentTenant
+from app.models.content import (
+    ContentPieceCreate,
+    ContentPieceRead,
+    ContentPieceType,
+    ContentTenant,
+)
+from app.models.content_generation import GenerationJobRead
+from app.services.content import audit
+from app.services.content import avatars as avatars_service
+from app.services.content import jobs as jobs_service
 from app.services.content import pieces as pieces_service
+from app.services.content.campaigns import get_campaign
+from app.services.content.generation_providers import has_active_provider
 
 router = new_router(dependencies=[Depends(content_auth.verify_tenant_token)])
+
+
+@router.post("/content/pieces", response_model=ContentPieceRead, status_code=202)
+def create_piece(
+    payload: ContentPieceCreate,
+    response: Response,
+    session: Session = Depends(get_session),
+    tenant: ContentTenant = Depends(content_auth.verify_tenant_token),
+):
+    if get_campaign(session, tenant_id=tenant.id, campaign_id=payload.campaign_id) is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    if payload.type in (ContentPieceType.audio, ContentPieceType.video):
+        if not payload.generation_prompt:
+            raise HTTPException(
+                status_code=422,
+                detail=f"generation_prompt is required for type {payload.type.value}",
+            )
+    elif not payload.generation_prompt and not payload.avatar_id:
+        raise HTTPException(
+            status_code=422,
+            detail="image pieces require generation_prompt or avatar_id",
+        )
+
+    if payload.avatar_id is not None:
+        avatar = avatars_service.get_avatar(
+            session, tenant_id=tenant.id, avatar_id=payload.avatar_id
+        )
+        if avatar is None:
+            raise HTTPException(status_code=404, detail="Avatar not found")
+
+    if payload.source_image_piece_id is not None:
+        source = pieces_service.get_piece(
+            session, tenant_id=tenant.id, piece_id=payload.source_image_piece_id
+        )
+        if source is None:
+            raise HTTPException(status_code=404, detail="Source image piece not found")
+
+    for kind in pieces_service.required_kinds_for(payload):
+        if not has_active_provider(session, tenant_id=tenant.id, kind=kind):
+            raise HTTPException(
+                status_code=422,
+                detail=f"no active {kind.value} provider configured for this tenant",
+            )
+
+    piece, created = pieces_service.create_piece(
+        session, tenant_id=tenant.id, payload=payload
+    )
+    if not created:
+        # Idempotent replay: the piece already exists and its generation was
+        # already paid for. Return it as-is instead of generating again.
+        response.status_code = 200
+        return piece
+
+    audit.write_audit_log(
+        session,
+        tenant_id=tenant.id,
+        entity_type="content_piece",
+        entity_id=piece.id,
+        action="created",
+        actor=f"tenant:{tenant.id}",
+    )
+    return piece
+
+
+@router.get("/content/pieces/{piece_id}/jobs", response_model=list[GenerationJobRead])
+def list_piece_jobs(
+    piece_id: int,
+    session: Session = Depends(get_session),
+    tenant: ContentTenant = Depends(content_auth.verify_tenant_token),
+):
+    if pieces_service.get_piece(session, tenant_id=tenant.id, piece_id=piece_id) is None:
+        raise HTTPException(status_code=404, detail="Content piece not found")
+    return jobs_service.list_jobs_for_piece(
+        session, tenant_id=tenant.id, piece_id=piece_id
+    )
 
 
 @router.get(
