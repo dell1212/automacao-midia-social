@@ -488,3 +488,9 @@ open_task_folder_on_completion = true
 # subtitle_background_enabled = false
 # subtitle_background_color = "#000000"
 # rounded_subtitle_background = false
+
+# Content module — Supabase Storage for generated artifacts.
+# These are secrets and must be set as environment variables, never here:
+#   SUPABASE_URL=https://<project-ref>.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY=<service role key>
+#   CONTENT_STORAGE_BUCKET=content-assets   # optional, defaults to content-assets
