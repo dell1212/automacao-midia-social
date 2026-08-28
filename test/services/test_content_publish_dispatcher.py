@@ -129,19 +129,18 @@ class TestExecuteClaimedPublication(unittest.TestCase):
             if c.args and c.args[0].__name__ == "ContentPiece" and c.kwargs.get("with_for_update") is True
         ]
         self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
-        # Same requirement for the fencing re-fetch: without with_for_update,
-        # SQLAlchemy's identity-map shortcut returns the same in-memory row
-        # already held, and the attempt_count comparison can never fail —
-        # the fence would be a no-op wearing the shape of a fence.
+        # Same requirement for the fencing re-fetch, and it must be
+        # session.refresh(), not session.get(): get() with with_for_update
+        # emits the SELECT but leaves the already-loaded attributes on the
+        # identity-mapped instance untouched, so the attempt_count comparison
+        # can never fail — a no-op wearing the shape of a fence.
         fencing_calls = [
             c
-            for c in session.get.call_args_list
-            if c.args
-            and c.args[0].__name__ == "ContentSocialPublication"
-            and c.kwargs.get("with_for_update") is True
+            for c in session.refresh.call_args_list
+            if c.args and c.args[0] is row and c.kwargs.get("with_for_update") is True
         ]
         self.assertTrue(
-            fencing_calls, "fencing re-fetch was not called with with_for_update=True"
+            fencing_calls, "fencing check did not call session.refresh(row, with_for_update=True)"
         )
 
     def test_retryable_failure_schedules_next_run_without_marking_failed(self):
@@ -217,13 +216,11 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         self.assertTrue(piece_lock_calls, "piece row was not re-fetched with with_for_update=True")
         fencing_calls = [
             c
-            for c in session.get.call_args_list
-            if c.args
-            and c.args[0].__name__ == "ContentSocialPublication"
-            and c.kwargs.get("with_for_update") is True
+            for c in session.refresh.call_args_list
+            if c.args and c.args[0] is row and c.kwargs.get("with_for_update") is True
         ]
         self.assertTrue(
-            fencing_calls, "fencing re-fetch was not called with with_for_update=True"
+            fencing_calls, "fencing check did not call session.refresh(row, with_for_update=True)"
         )
 
     def test_exhausted_retries_marks_failed(self):
