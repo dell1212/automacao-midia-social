@@ -2,6 +2,8 @@ import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.content import ContentPieceStatus
 from app.models.content_publishing import PublicationStatus
 from app.services.content import publish_dispatcher as dispatcher
@@ -20,6 +22,27 @@ class TestClaimDuePublications(unittest.TestCase):
         self.assertEqual(row.status, PublicationStatus.running)
         self.assertEqual(row.attempt_count, 1)
         session.commit.assert_called_once()
+
+    def test_claim_statement_uses_skip_locked_and_reclaims_stale_running(self):
+        """The one property this whole task exists to guarantee — assert on
+        the actual compiled SQL, not just the mocked effect. A future edit
+        that silently drops with_for_update(skip_locked=True) must fail this
+        test, not just look fine in a mocked unit test."""
+        session = MagicMock()
+        session.exec.return_value.all.return_value = []
+
+        dispatcher.claim_due_publications(session, limit=5)
+
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("FOR UPDATE SKIP LOCKED", compiled)
+        self.assertIn("NULLS FIRST", compiled)
+        self.assertIn("STATUS", compiled)
+        self.assertIn("RUNNING", compiled)
 
 
 class TestRecomputePublicationSummary(unittest.TestCase):
@@ -66,7 +89,7 @@ class TestExecuteClaimedPublication(unittest.TestCase):
             ("ContentSocialPublication", 1): row,
         }.get((model.__name__, id_), None)
 
-        def get_side_effect(model, id_):
+        def get_side_effect(model, id_, **kwargs):
             if model.__name__ == "ContentSocialPublication":
                 return row
             if model.__name__ == "ContentPiece":
@@ -102,7 +125,7 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         piece = MagicMock(id=10, posted_at=None)
         account = MagicMock()
 
-        def get_side_effect(model, id_):
+        def get_side_effect(model, id_, **kwargs):
             if model.__name__ == "ContentSocialPublication":
                 return row
             if model.__name__ == "ContentPiece":
@@ -133,7 +156,7 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         piece = MagicMock(id=10, posted_at=None)
         account = MagicMock()
 
-        def get_side_effect(model, id_):
+        def get_side_effect(model, id_, **kwargs):
             if model.__name__ == "ContentSocialPublication":
                 return row
             if model.__name__ == "ContentPiece":
@@ -168,7 +191,7 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         piece = MagicMock(id=10, posted_at=None)
         account = MagicMock()
 
-        def get_side_effect(model, id_):
+        def get_side_effect(model, id_, **kwargs):
             if model.__name__ == "ContentSocialPublication":
                 return row
             if model.__name__ == "ContentPiece":
@@ -204,7 +227,7 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         piece = MagicMock(id=10, posted_at=None)
         account = MagicMock()
 
-        def get_side_effect(model, id_):
+        def get_side_effect(model, id_, **kwargs):
             if model.__name__ == "ContentSocialPublication":
                 return row
             if model.__name__ == "ContentPiece":
@@ -224,6 +247,45 @@ class TestExecuteClaimedPublication(unittest.TestCase):
         self.assertEqual(row.status, PublicationStatus.retrying)
         self.assertIsNotNone(row.next_run_at)
         self.assertEqual(row.error_code, "transient")
+
+    def test_semaphore_is_released_after_publish_raises(self):
+        """If the semaphore leaked on failure, a same-platform publication
+        would eventually deadlock waiting for a permit that never comes
+        back — this must hold even on the error path, not just success."""
+        row = self._row()
+        piece = MagicMock(id=10, posted_at=None)
+        account = MagicMock()
+
+        def get_side_effect(model, id_, **kwargs):
+            if model.__name__ == "ContentSocialPublication":
+                return row
+            if model.__name__ == "ContentPiece":
+                return piece
+            if model.__name__ == "ContentSocialAccount":
+                return account
+            return None
+
+        session = MagicMock()
+        session.get.side_effect = get_side_effect
+
+        adapter = MagicMock()
+        adapter.publish.side_effect = PublicationError(
+            PublicationErrorCode.invalid_params, "bad payload"
+        )
+
+        with patch.object(dispatcher, "get_final_asset", return_value=MagicMock()):
+            with patch.object(dispatcher, "get_adapter", return_value=adapter):
+                with patch.object(dispatcher, "load_credentials", return_value={}):
+                    with patch.object(
+                        dispatcher, "recompute_publication_summary", return_value={}
+                    ):
+                        dispatcher.execute_claimed_publication(session, 1)
+
+        semaphore = dispatcher._platform_semaphore(row.platform)
+        acquired = semaphore.acquire(blocking=False)
+        self.assertTrue(acquired, "semaphore was not released after adapter.publish raised")
+        if acquired:
+            semaphore.release()
 
 
 class TestDispatcherLifecycle(unittest.TestCase):
