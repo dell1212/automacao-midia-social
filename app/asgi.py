@@ -34,6 +34,11 @@ async def application_lifespan(_: FastAPI):
     start_dispatcher()
     logger.info("content publish dispatcher started")
 
+    from app.services.content.automation_scheduler import start_scheduler, stop_scheduler
+
+    start_scheduler()
+    logger.info("content automation scheduler started")
+
     configured_api_key = config.app.get("api_key", "")
     if configured_api_key in (None, ""):
         logger.warning(
@@ -57,6 +62,8 @@ async def application_lifespan(_: FastAPI):
     finally:
         stop_dispatcher()
         logger.info("content publish dispatcher stopped")
+        stop_scheduler()
+        logger.info("content automation scheduler stopped")
         logger.info("shutdown event")
 
 

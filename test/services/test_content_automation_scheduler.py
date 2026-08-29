@@ -1,3 +1,4 @@
+import time
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
@@ -411,6 +412,42 @@ class TestDispatchScheduledPublications(unittest.TestCase):
 
         self.assertEqual(resolve.call_count, 2)
         session.rollback.assert_called_once()
+
+
+class TestSchedulerLifecycle(unittest.TestCase):
+    def tearDown(self):
+        scheduler.stop_scheduler()
+
+    def test_tick_calls_all_three_passes_in_order(self):
+        calls = []
+        with patch.object(
+            scheduler,
+            "_fill_campaign_calendars",
+            side_effect=lambda *_a, **_k: calls.append("gen"),
+        ):
+            with patch.object(
+                scheduler,
+                "_evaluate_pending_approvals",
+                side_effect=lambda *_a, **_k: calls.append("approve"),
+            ):
+                with patch.object(
+                    scheduler,
+                    "_dispatch_scheduled_publications",
+                    side_effect=lambda *_a, **_k: calls.append("publish"),
+                ):
+                    with patch.object(scheduler, "get_engine"):
+                        with patch.object(scheduler, "Session"):
+                            scheduler._tick()
+
+        self.assertEqual(calls, ["gen", "approve", "publish"])
+
+    def test_start_then_stop_is_safe_and_idempotent(self):
+        scheduler.start_scheduler()
+        time.sleep(0.05)
+        scheduler.stop_scheduler()
+        # Segundo start/stop não deve levantar exceção.
+        scheduler.start_scheduler()
+        scheduler.stop_scheduler()
 
 
 if __name__ == "__main__":

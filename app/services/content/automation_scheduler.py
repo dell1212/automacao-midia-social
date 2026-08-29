@@ -1,4 +1,5 @@
 import os
+import threading
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -301,3 +302,52 @@ def _dispatch_scheduled_publications(session: Session, *, batch_limit: int) -> N
                 f"piece {piece.id}: concurrent scheduled-publish dispatch — "
                 f"another replica won the race"
             )
+
+
+_stop_event = threading.Event()
+_scheduler_thread: Optional[threading.Thread] = None
+
+
+def _tick() -> None:
+    """Um tick roda os 3 passes em sequência, cada um em sua própria sessão.
+
+    Ao contrário do dispatcher de publicação da fase 3, nenhum passe aqui
+    precisa de um pool de threads próprio: a geração já é assíncrona por
+    conta de pieces_service.create_piece/schedule_piece (fase 2), e a
+    avaliação de regra e o disparo de publicação agendada são operações de
+    banco rápidas — o trabalho pesado sempre acontece em outro lugar.
+    """
+    with Session(get_engine()) as session:
+        _fill_campaign_calendars(session, batch_limit=_BATCH_LIMIT)
+    with Session(get_engine()) as session:
+        _evaluate_pending_approvals(session, batch_limit=_BATCH_LIMIT)
+    with Session(get_engine()) as session:
+        _dispatch_scheduled_publications(session, batch_limit=_BATCH_LIMIT)
+
+
+def _loop() -> None:
+    while not _stop_event.is_set():
+        try:
+            _tick()
+        except Exception:
+            logger.exception("automation scheduler tick failed")
+        _stop_event.wait(TICK_SECONDS)
+
+
+def start_scheduler() -> None:
+    global _scheduler_thread
+    if _scheduler_thread is not None:
+        return
+    _stop_event.clear()
+    _scheduler_thread = threading.Thread(
+        target=_loop, name="mpt-content-automation-scheduler", daemon=True
+    )
+    _scheduler_thread.start()
+
+
+def stop_scheduler() -> None:
+    global _scheduler_thread
+    _stop_event.set()
+    if _scheduler_thread is not None:
+        _scheduler_thread.join(timeout=5)
+        _scheduler_thread = None

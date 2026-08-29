@@ -502,3 +502,8 @@ open_task_folder_on_completion = true
 #   CONTENT_PUBLISH_DISPATCH_INTERVAL_SECONDS=2      # optional, dispatcher poll interval
 #   CONTENT_PUBLISH_DISPATCH_BATCH_SIZE=4            # optional, defaults to CONTENT_PUBLISH_WORKERS
 #   CONTENT_PUBLISH_STALE_RUNNING_SECONDS=1800       # optional, reclaim window for rows stuck in running
+
+# Content module — automation and approval (sub-project 4).
+# These are secrets and must be set as environment variables, never here:
+#   CONTENT_AUTOMATION_TICK_SECONDS=300          # optional, scheduler poll interval
+#   CONTENT_AUTOMATION_BATCH_SIZE=50              # optional, campaigns/pieces processed per tick per pass
