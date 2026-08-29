@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 
 from app.models.content import (
@@ -267,11 +268,21 @@ class TestEvaluatePendingApprovals(unittest.TestCase):
             scheduler._evaluate_pending_approvals(session, batch_limit=50)
 
         list_rules.assert_not_called()
-        update_call = session.exec.call_args_list[-1].args[0]
-        compiled_values = update_call._values if hasattr(update_call, "_values") else None
-        # Sanity: an UPDATE statement was issued (compiled check covered by
-        # the dispatcher's own precedent — assert on outcome via commit here).
         session.commit.assert_called()
+
+        # Regression guard: the mocked rowcount above proves nothing about
+        # what predicate actually reached the DB. Compile the real statement
+        # passed to session.exec and assert the WHERE clause still ANDs both
+        # the id and the pending_approval status — a future edit that drops
+        # the status predicate would still pass every assertion above.
+        update_call = session.exec.call_args_list[-1].args[0]
+        compiled = str(
+            update_call.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("STATUS = 'PENDING_APPROVAL'", compiled)
+        self.assertIn("ID = 1", compiled)
 
     def test_matching_rule_auto_approves(self):
         piece = self._piece(risk_level=RiskLevel.high)
@@ -324,6 +335,20 @@ class TestEvaluatePendingApprovals(unittest.TestCase):
 
         with patch.object(approval_rules_service, "list_approval_rules", return_value=[]):
             scheduler._evaluate_pending_approvals(session, batch_limit=50)
+
+        # Regression guard: rowcount=0 here simulates the race being caught,
+        # but only if the guard's WHERE clause actually carries both
+        # predicates. Compile the real statement so a future edit that drops
+        # the status predicate (and thus stops the guard from ever
+        # protecting anything) fails this test instead of staying green.
+        update_call = session.exec.call_args_list[-1].args[0]
+        compiled = str(
+            update_call.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("STATUS = 'PENDING_APPROVAL'", compiled)
+        self.assertIn("ID = 1", compiled)
 
 
 if __name__ == "__main__":
