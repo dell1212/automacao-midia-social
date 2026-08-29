@@ -1,3 +1,7 @@
+import base64
+import hashlib
+import hmac
+import json
 import os
 import time
 import unittest
@@ -17,6 +21,27 @@ def _session_returning(tenant):
     session = MagicMock()
     session.exec.return_value.first.return_value = tenant
     return session
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _forge_hs256_token(claims: dict, secret: str) -> str:
+    """Hand-builds an HS256 JWT signed with `secret` as the HMAC key.
+
+    Bypasses PyJWT's own `jwt.encode`, which (as of PyJWT 2.10+) refuses to
+    use a PEM-formatted key as an HMAC secret. An attacker forging a token
+    isn't bound by that client-side guard, so this reproduces the actual
+    algorithm-confusion attack surface: a token whose header claims HS256,
+    signed with the server's *public* RSA key bytes.
+    """
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_b64 = _b64url(json.dumps(header, separators=(",", ":")).encode())
+    payload_b64 = _b64url(json.dumps(claims, separators=(",", ":")).encode())
+    signing_input = f"{header_b64}.{payload_b64}".encode()
+    signature = hmac.new(secret.encode(), signing_input, hashlib.sha256).digest()
+    return f"{header_b64}.{payload_b64}.{_b64url(signature)}"
 
 
 def _generate_rsa_keypair():
@@ -208,6 +233,35 @@ class TestVerifyUserSession(unittest.TestCase):
             "exp": int(time.time()) + 3600,
         }
         token = jwt.encode(claims, self.private_pem, algorithm="RS256")
+        with patch.dict(os.environ, {"CONTENT_UI_JWT_PUBLIC_KEY": self.public_pem}):
+            with self.assertRaises(HTTPException) as ctx:
+                content_auth.verify_user_session(
+                    authorization=f"Bearer {token}", session=MagicMock()
+                )
+        self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_missing_exp_claim_is_rejected(self):
+        claims = {
+            "tenant_id": 1,
+            "user_id": "user-1",
+            "role": "admin",
+        }
+        token = jwt.encode(claims, self.private_pem, algorithm="RS256")
+        with patch.dict(os.environ, {"CONTENT_UI_JWT_PUBLIC_KEY": self.public_pem}):
+            with self.assertRaises(HTTPException) as ctx:
+                content_auth.verify_user_session(
+                    authorization=f"Bearer {token}", session=MagicMock()
+                )
+        self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_hs256_algorithm_confusion_is_rejected(self):
+        claims = {
+            "tenant_id": 1,
+            "user_id": "user-1",
+            "role": "admin",
+            "exp": int(time.time()) + 3600,
+        }
+        token = _forge_hs256_token(claims, self.public_pem)
         with patch.dict(os.environ, {"CONTENT_UI_JWT_PUBLIC_KEY": self.public_pem}):
             with self.assertRaises(HTTPException) as ctx:
                 content_auth.verify_user_session(

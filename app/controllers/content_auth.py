@@ -87,7 +87,9 @@ def verify_user_session(
         )
 
     try:
-        claims = jwt.decode(token, public_key, algorithms=["RS256"])
+        claims = jwt.decode(
+            token, public_key, algorithms=["RS256"], options={"require": ["exp"]}
+        )
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid session token")
 
