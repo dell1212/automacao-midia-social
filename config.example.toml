@@ -507,3 +507,7 @@ open_task_folder_on_completion = true
 # These are secrets and must be set as environment variables, never here:
 #   CONTENT_AUTOMATION_TICK_SECONDS=300          # optional, scheduler poll interval
 #   CONTENT_AUTOMATION_BATCH_SIZE=50              # optional, campaigns/pieces processed per tick per pass
+
+# Content module — UI session auth (sub-project 5a).
+# This is a secret and must be set as an environment variable, never here:
+#   CONTENT_UI_JWT_PUBLIC_KEY=<RS256 public key, PEM format>   # required for /v1/content/ui/... routes

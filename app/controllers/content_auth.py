@@ -1,7 +1,9 @@
 import os
 import secrets
+from dataclasses import dataclass
 from typing import Optional
 
+import jwt
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
@@ -10,6 +12,8 @@ from app.models.content import ContentTenant, EntitlementStatus
 from app.services.content.crypto import hash_api_token
 
 _ADMIN_TOKEN_ENV = "CONTENT_ADMIN_TOKEN"
+_UI_JWT_PUBLIC_KEY_ENV = "CONTENT_UI_JWT_PUBLIC_KEY"
+_VALID_ROLES = {"admin", "member"}
 
 
 def verify_admin_token(x_admin_token: Optional[str] = Header(default=None)) -> None:
@@ -50,3 +54,59 @@ def verify_tenant_token(
         raise HTTPException(status_code=403, detail="Tenant is not entitled")
 
     return tenant
+
+
+@dataclass(frozen=True)
+class UserSession:
+    tenant: ContentTenant
+    user_id: str
+    role: str
+    name: Optional[str]
+
+
+def verify_user_session(
+    authorization: Optional[str] = Header(default=None),
+    session: Session = Depends(get_session),
+) -> UserSession:
+    """Validates the RS256 session JWT the parent app hands the iframe.
+
+    Additive to verify_tenant_token/verify_admin_token — used only by the
+    new /v1/content/ui/... routes. Fails closed like verify_admin_token:
+    an unconfigured public key is a 500, not an open door.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+
+    token = authorization[len("Bearer ") :]
+
+    public_key = os.environ.get(_UI_JWT_PUBLIC_KEY_ENV)
+    if not public_key:
+        raise HTTPException(
+            status_code=500,
+            detail=f"{_UI_JWT_PUBLIC_KEY_ENV} is not configured on the server",
+        )
+
+    try:
+        claims = jwt.decode(token, public_key, algorithms=["RS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid session token")
+
+    tenant_id = claims.get("tenant_id")
+    user_id = claims.get("user_id")
+    role = claims.get("role")
+    if tenant_id is None or not user_id or role not in _VALID_ROLES:
+        raise HTTPException(status_code=401, detail="Invalid session token")
+
+    tenant = session.get(ContentTenant, tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=401, detail="Invalid session token")
+
+    if tenant.entitlement_status == EntitlementStatus.inactive:
+        raise HTTPException(status_code=403, detail="Tenant is not entitled")
+
+    return UserSession(tenant=tenant, user_id=str(user_id), role=role, name=claims.get("name"))
+
+
+def require_role(user_session: UserSession, role: str) -> None:
+    if user_session.role != role:
+        raise HTTPException(status_code=403, detail=f"Requires role '{role}'")
