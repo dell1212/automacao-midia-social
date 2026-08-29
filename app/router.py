@@ -23,6 +23,7 @@ from app.controllers.v1.content import (
     publications,
     social_accounts,
     tenants,
+    ui,
 )
 
 root_api_router = APIRouter()
@@ -44,3 +45,4 @@ root_api_router.include_router(pieces.router)
 root_api_router.include_router(providers.router)
 root_api_router.include_router(publications.router)
 root_api_router.include_router(models.router)
+root_api_router.include_router(ui.router)
