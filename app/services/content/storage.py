@@ -84,3 +84,38 @@ def upload_bytes(
     return UploadedObject(
         url=public_url, storage_path=storage_path, size_bytes=len(data)
     )
+
+
+def create_signed_url(storage_path: str, *, expires_in: int = 600) -> str:
+    """Signs a storage_path for temporary UI access.
+
+    Uploads and the pipeline/publish paths keep using the public URL
+    persisted on ContentAsset.url — this is only for what the review UI
+    hands to the browser, generated fresh on every call (no caching, the
+    default 10-minute TTL is already short enough).
+    """
+    base_url = _require_env(_SUPABASE_URL_ENV).rstrip("/")
+    service_key = _require_env(_SUPABASE_SERVICE_KEY_ENV)
+    bucket = _bucket()
+    endpoint = f"{base_url}/storage/v1/object/sign/{bucket}/{storage_path}"
+
+    try:
+        response = requests.post(
+            endpoint,
+            json={"expiresIn": expires_in},
+            headers={"Authorization": f"Bearer {service_key}"},
+            timeout=_UPLOAD_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise StorageError(f"storage sign request failed for {storage_path}") from exc
+
+    if response.status_code >= 400:
+        raise StorageError(
+            f"storage sign rejected for {storage_path}: status={response.status_code}"
+        )
+
+    signed_url = response.json().get("signedURL")
+    if not signed_url:
+        raise StorageError(f"storage sign response missing signedURL for {storage_path}")
+
+    return f"{base_url}/storage/v1{signed_url}"
