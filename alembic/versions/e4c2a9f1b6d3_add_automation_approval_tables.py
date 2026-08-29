@@ -8,6 +8,7 @@ Create Date: 2026-08-29 12:00:00.000000
 from alembic import op
 import sqlalchemy as sa
 import sqlmodel
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -24,7 +25,9 @@ def upgrade() -> None:
         sa.Column('campaign_id', sa.Integer(), nullable=False),
         sa.Column(
             'type',
-            sa.Enum('video', 'image', 'audio', name='content_piece_type', create_type=False),
+            postgresql.ENUM(
+                'video', 'image', 'audio', name='content_piece_type', create_type=False
+            ),
             nullable=True,
         ),
         sa.Column('generation_prompt', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
@@ -33,7 +36,7 @@ def upgrade() -> None:
         sa.Column('is_synthetic_media', sa.Boolean(), server_default=sa.false(), nullable=False),
         sa.Column(
             'content_category',
-            sa.Enum(
+            postgresql.ENUM(
                 'medical', 'pharmaceutical', 'financial', 'insurance', 'legal',
                 'alcohol', 'gambling', 'political', 'regulated_product',
                 name='content_category', create_type=False,
@@ -55,7 +58,10 @@ def upgrade() -> None:
 
     op.add_column('content_pieces', sa.Column(
         'approval_action',
-        sa.Enum('auto_approve', 'require_review', name='content_approval_action', create_type=False),
+        postgresql.ENUM(
+            'auto_approve', 'require_review',
+            name='content_approval_action', create_type=False,
+        ),
         nullable=True,
     ))
     op.add_column('content_pieces', sa.Column('approved_at', sa.DateTime(), nullable=True))

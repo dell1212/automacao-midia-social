@@ -48,8 +48,11 @@ def list_templates(
         return []
     return list(
         session.exec(
-            select(ContentGenerationTemplate).where(
-                ContentGenerationTemplate.campaign_id == campaign_id
-            )
+            select(ContentGenerationTemplate)
+            .where(ContentGenerationTemplate.campaign_id == campaign_id)
+            # pick_template_index rotates by position, so the rotation is only
+            # deterministic if the row order is stable across calls — without
+            # an ORDER BY, Postgres is free to return them in any order.
+            .order_by(ContentGenerationTemplate.id)
         ).all()
     )

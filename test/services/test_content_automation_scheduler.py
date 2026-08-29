@@ -5,17 +5,25 @@ from unittest.mock import MagicMock, patch
 
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.models.content import (
     ApprovalAction,
+    ContentCampaign,
     ContentCategory,
+    ContentClient,
+    ContentGenerationTemplate,
+    ContentPiece,
     ContentPieceStatus,
     ContentPieceType,
     ContentSocialAccount,
+    ContentTenant,
     EntitlementStatus,
     RiskLevel,
 )
+from app.models import content_publishing  # noqa: F401  (registra tabelas no metadata)
 from app.services.content import approval_rules as approval_rules_service
+from app.services.content import audit as audit_service
 from app.services.content import automation_scheduler as scheduler
 from app.services.content import generation_templates as templates_service
 from app.services.content import pieces as pieces_service
@@ -175,6 +183,182 @@ class TestFillCampaignCalendars(unittest.TestCase):
 
         self.assertEqual(create_piece.call_count, 2)
         session.rollback.assert_called_once()
+
+
+    def test_max_scheduled_query_excludes_pieces_with_null_scheduled_for(self):
+        """Guarda de regressão para C2, no nível do SQL compilado.
+
+        Um teste com engine SQLite não consegue provar isto: o SQLite ordena
+        NULL por último no DESC, enquanto o padrão do Postgres é NULLS FIRST —
+        ou seja, o bug só aparece em produção. O que dá para provar em
+        qualquer ambiente é que o predicado chega mesmo ao banco.
+        """
+        session = MagicMock()
+        campaign = self._campaign()
+        template = MagicMock(
+            id=9,
+            type=ContentPieceType.image,
+            generation_prompt="a cat",
+            avatar_id=None,
+            voice_id=None,
+            is_synthetic_media=False,
+            content_category=None,
+            aspect_ratio="9:16",
+            resolution=None,
+            duration=None,
+        )
+        session.exec.return_value.all.side_effect = [[campaign], [], []]
+        session.exec.return_value.first.return_value = None
+        session.get.side_effect = lambda model, id_: {
+            ("ContentClient", 1): self._client(),
+            ("ContentTenant", 1): self._tenant(),
+        }.get((model.__name__, id_))
+
+        with patch.object(templates_service, "list_templates", return_value=[template]):
+            with patch.object(
+                pieces_service, "create_piece", return_value=(MagicMock(id=100), True)
+            ):
+                scheduler._fill_campaign_calendars(session, batch_limit=50)
+
+        # A segunda chamada a exec() é a query de max_scheduled.
+        max_scheduled_stmt = session.exec.call_args_list[1].args[0]
+        compiled = str(
+            max_scheduled_stmt.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("SCHEDULED_FOR IS NOT NULL", compiled)
+
+    def test_generic_exception_on_one_campaign_does_not_stop_the_batch(self):
+        session = MagicMock()
+        campaign_a = self._campaign(id=1, client_id=1)
+        campaign_b = self._campaign(id=2, client_id=1)
+        template = MagicMock(
+            id=9,
+            type=ContentPieceType.image,
+            generation_prompt="a cat",
+            avatar_id=None,
+            voice_id=None,
+            is_synthetic_media=False,
+            content_category=None,
+            aspect_ratio="9:16",
+            resolution=None,
+            duration=None,
+        )
+        session.exec.return_value.all.side_effect = [
+            [campaign_a, campaign_b], [], [], [], [],
+        ]
+        session.exec.return_value.first.return_value = None
+        session.get.side_effect = lambda model, id_: {
+            ("ContentClient", 1): self._client(),
+            ("ContentTenant", 1): self._tenant(),
+        }.get((model.__name__, id_))
+        created_piece = MagicMock(id=101)
+
+        with patch.object(templates_service, "list_templates", return_value=[template]):
+            with patch.object(
+                pieces_service,
+                "create_piece",
+                side_effect=[RuntimeError("boom"), (created_piece, True)],
+            ) as create_piece:
+                scheduler._fill_campaign_calendars(session, batch_limit=50)
+
+        self.assertEqual(create_piece.call_count, 2)
+
+
+class TestMaxScheduledQuery(unittest.TestCase):
+    """Passe 1 contra um engine SQLite real, não um mock.
+
+    O bug alvo (C2) é invisível para um teste com sessão mockada: o mock nunca
+    executa o WHERE/ORDER BY de verdade. Também é invisível para a ordenação de
+    NULL do próprio SQLite (NULLS LAST no DESC), o oposto do padrão do
+    Postgres — daí a necessidade do IS NOT NULL explícito, que vale em
+    qualquer dialeto em vez de depender do comportamento de um deles.
+    """
+
+    def _piece(self, **overrides):
+        base = dict(
+            campaign_id=1,
+            type=ContentPieceType.image,
+            status=ContentPieceStatus.pending_approval,
+            scheduled_for=None,
+        )
+        base.update(overrides)
+        return ContentPiece(**base)
+
+    def _session(self):
+        engine = create_engine("sqlite://")
+        SQLModel.metadata.create_all(engine)
+        session = Session(engine)
+        tenant = ContentTenant(
+            owner_user_id="u1",
+            name="T",
+            slug="t",
+            api_token_hash="h",
+            entitlement_status=EntitlementStatus.active,
+        )
+        session.add(tenant)
+        session.commit()
+        client = ContentClient(tenant_id=tenant.id, name="C")
+        session.add(client)
+        session.commit()
+        campaign = ContentCampaign(client_id=client.id, name="Camp", horizon_days=7)
+        session.add(campaign)
+        session.add(
+            ContentGenerationTemplate(campaign_id=1, type=ContentPieceType.image)
+        )
+        session.commit()
+        return session
+
+    def _run_pass(self, session):
+        """Roda o Passe 1 de verdade contra o engine, sem gerar mídia."""
+        created = self._piece(idempotency_key="auto:1:generated")
+        with patch.object(
+            pieces_service, "create_piece", return_value=(created, True)
+        ) as create_piece:
+            with patch.object(audit_service, "write_audit_log") as write_audit_log:
+                with patch.object(scheduler, "logger") as log:
+                    scheduler._fill_campaign_calendars(session, batch_limit=50)
+        # Nada pode ter sido engolido pelo catch-all do laço: se algo foi, o
+        # resto das asserções deste teste não prova nada.
+        log.exception.assert_not_called()
+        return create_piece, created, write_audit_log
+
+    def test_manual_piece_with_null_scheduled_for_does_not_block_the_calendar(self):
+        with self._session() as session:
+            # Uma piece criada manualmente via API: nunca recebe scheduled_for.
+            session.add(self._piece())
+            session.commit()
+
+            create_piece, created, write_audit_log = self._run_pass(session)
+
+            # Sem o IS NOT NULL, o NULL vence o ORDER BY ... DESC no Postgres,
+            # next_slot(None) devolve `now`, e o calendário nunca avança.
+            create_piece.assert_called_once()
+            self.assertIsNotNone(created.scheduled_for)
+            self.assertTrue(created.is_autogenerated)
+            write_audit_log.assert_called_once()
+
+    def test_furthest_auto_slot_wins_over_manual_pieces(self):
+        with self._session() as session:
+            session.add(self._piece())  # manual, scheduled_for=None
+            session.add(self._piece(scheduled_for=datetime(2026, 9, 1, 10, 0, 0)))
+            session.add(self._piece(scheduled_for=datetime(2026, 9, 3, 10, 0, 0)))
+            session.commit()
+
+            max_scheduled = session.exec(
+                select(ContentPiece.scheduled_for)
+                .where(
+                    ContentPiece.campaign_id == 1,
+                    ContentPiece.status.not_in(
+                        [ContentPieceStatus.rejected, ContentPieceStatus.failed]
+                    ),
+                    ContentPiece.scheduled_for.is_not(None),
+                )
+                .order_by(ContentPiece.scheduled_for.desc())
+            ).first()
+
+        self.assertEqual(max_scheduled, datetime(2026, 9, 3, 10, 0, 0))
 
 
 class TestRuleMatches(unittest.TestCase):
@@ -354,6 +538,48 @@ class TestEvaluatePendingApprovals(unittest.TestCase):
         self.assertIn("ID = 1", compiled)
 
 
+    def test_generic_exception_on_one_piece_does_not_stop_the_batch(self):
+        piece_a = self._piece(id=1)
+        piece_b = self._piece(id=2)
+        session = MagicMock()
+        session.exec.return_value.all.return_value = [piece_a, piece_b]
+        session.exec.return_value.rowcount = 1
+        client, _ = self._client_and_tenant()
+        session.get.side_effect = lambda model, id_: {
+            ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
+            ("ContentClient", 1): client,
+        }.get((model.__name__, id_))
+
+        with patch.object(
+            approval_rules_service,
+            "list_approval_rules",
+            side_effect=[RuntimeError("boom"), []],
+        ) as list_rules:
+            scheduler._evaluate_pending_approvals(session, batch_limit=50)
+
+        self.assertEqual(list_rules.call_count, 2)
+
+    def test_missing_campaign_skips_the_piece_without_raising(self):
+        piece = self._piece(id=1, campaign_id=999)
+        session = MagicMock()
+        session.exec.return_value.all.return_value = [piece]
+        session.exec.return_value.rowcount = 1
+        # Nem o campaign nem o client existem: FK órfã.
+        session.get.side_effect = lambda model, id_: None
+
+        with patch.object(approval_rules_service, "list_approval_rules") as list_rules:
+            with patch.object(audit_service, "write_audit_log") as write_audit_log:
+                with patch.object(scheduler, "logger") as log:
+                    scheduler._evaluate_pending_approvals(session, batch_limit=50)
+
+        list_rules.assert_not_called()
+        write_audit_log.assert_not_called()
+        # Skip limpo, não um AttributeError engolido pelo catch-all do laço:
+        # a guarda explícita de FK órfã é o que se está testando aqui.
+        log.exception.assert_not_called()
+        log.warning.assert_called()
+
+
 class TestDispatchScheduledPublications(unittest.TestCase):
     def test_skips_when_tenant_not_active(self):
         piece = MagicMock(id=1, campaign_id=1)
@@ -413,6 +639,95 @@ class TestDispatchScheduledPublications(unittest.TestCase):
         self.assertEqual(resolve.call_count, 2)
         session.rollback.assert_called_once()
 
+    def test_all_accounts_rejected_writes_an_audit_log(self):
+        piece = MagicMock(id=1, campaign_id=1)
+        accounts = [MagicMock(id=10)]
+        session = MagicMock()
+        session.exec.return_value.all.side_effect = [[piece], accounts]
+        session.get.side_effect = lambda model, id_: {
+            ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
+            ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
+            ("ContentTenant", 1): MagicMock(id=1, entitlement_status=EntitlementStatus.active),
+        }.get((model.__name__, id_))
+        rejected = [
+            {
+                "social_account_id": 10,
+                "platform": "instagram",
+                "reason": "unsupported_capability",
+                "message": "Content piece has no final asset to publish",
+            }
+        ]
+
+        with patch.object(
+            publications_service, "resolve_publication_request", return_value=([], rejected)
+        ):
+            with patch.object(audit_service, "write_audit_log") as write_audit_log:
+                scheduler._dispatch_scheduled_publications(session, batch_limit=50)
+
+        write_audit_log.assert_called_once()
+        _, kwargs = write_audit_log.call_args
+        self.assertEqual(kwargs["action"], "scheduled_publish_all_rejected")
+        self.assertEqual(kwargs["entity_type"], "content_piece")
+        self.assertEqual(kwargs["entity_id"], 1)
+        self.assertEqual(kwargs["tenant_id"], 1)
+
+    def test_partial_acceptance_does_not_write_the_rejection_audit_log(self):
+        piece = MagicMock(id=1, campaign_id=1)
+        accounts = [MagicMock(id=10), MagicMock(id=11)]
+        session = MagicMock()
+        session.exec.return_value.all.side_effect = [[piece], accounts]
+        session.get.side_effect = lambda model, id_: {
+            ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
+            ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
+            ("ContentTenant", 1): MagicMock(id=1, entitlement_status=EntitlementStatus.active),
+        }.get((model.__name__, id_))
+
+        with patch.object(
+            publications_service,
+            "resolve_publication_request",
+            return_value=([MagicMock(id=5)], [{"reason": "unsupported_capability"}]),
+        ):
+            with patch.object(audit_service, "write_audit_log") as write_audit_log:
+                scheduler._dispatch_scheduled_publications(session, batch_limit=50)
+
+        write_audit_log.assert_not_called()
+
+    def test_generic_exception_on_one_piece_does_not_stop_the_batch(self):
+        piece_a = MagicMock(id=1, campaign_id=1)
+        piece_b = MagicMock(id=2, campaign_id=1)
+        accounts = [MagicMock(id=10)]
+        session = MagicMock()
+        session.exec.return_value.all.side_effect = [[piece_a, piece_b], accounts, accounts]
+        session.get.side_effect = lambda model, id_: {
+            ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
+            ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
+            ("ContentTenant", 1): MagicMock(id=1, entitlement_status=EntitlementStatus.active),
+        }.get((model.__name__, id_))
+
+        with patch.object(
+            publications_service,
+            "resolve_publication_request",
+            side_effect=[RuntimeError("boom"), ([MagicMock(id=5)], [])],
+        ) as resolve:
+            scheduler._dispatch_scheduled_publications(session, batch_limit=50)
+
+        self.assertEqual(resolve.call_count, 2)
+
+    def test_missing_campaign_skips_the_piece_without_raising(self):
+        piece = MagicMock(id=1, campaign_id=999)
+        session = MagicMock()
+        session.exec.return_value.all.side_effect = [[piece]]
+        session.get.side_effect = lambda model, id_: None
+
+        with patch.object(publications_service, "resolve_publication_request") as resolve:
+            with patch.object(scheduler, "logger") as log:
+                scheduler._dispatch_scheduled_publications(session, batch_limit=50)
+
+        resolve.assert_not_called()
+        # Skip limpo, não um AttributeError engolido pelo catch-all do laço.
+        log.exception.assert_not_called()
+        log.warning.assert_called()
+
 
 class TestSchedulerLifecycle(unittest.TestCase):
     def tearDown(self):
@@ -442,12 +757,43 @@ class TestSchedulerLifecycle(unittest.TestCase):
         self.assertEqual(calls, ["gen", "approve", "publish"])
 
     def test_start_then_stop_is_safe_and_idempotent(self):
-        scheduler.start_scheduler()
-        time.sleep(0.05)
-        scheduler.stop_scheduler()
-        # Segundo start/stop não deve levantar exceção.
-        scheduler.start_scheduler()
-        scheduler.stop_scheduler()
+        # get_engine/Session precisam ser patchados aqui igual ao teste acima:
+        # o thread do scheduler chama _tick() de verdade, e sem isso este teste
+        # escreveria num banco real sempre que DATABASE_URL estiver definida.
+        with patch.object(scheduler, "get_engine"):
+            with patch.object(scheduler, "Session"):
+                with patch.object(scheduler, "_fill_campaign_calendars"):
+                    with patch.object(scheduler, "_evaluate_pending_approvals"):
+                        with patch.object(scheduler, "_dispatch_scheduled_publications"):
+                            scheduler.start_scheduler()
+                            time.sleep(0.05)
+                            scheduler.stop_scheduler()
+                            # Segundo start/stop não deve levantar exceção.
+                            scheduler.start_scheduler()
+                            scheduler.stop_scheduler()
+
+    def test_a_failing_pass_does_not_prevent_the_other_passes(self):
+        calls = []
+        with patch.object(
+            scheduler,
+            "_fill_campaign_calendars",
+            side_effect=RuntimeError("poison pill"),
+        ):
+            with patch.object(
+                scheduler,
+                "_evaluate_pending_approvals",
+                side_effect=lambda *_a, **_k: calls.append("approve"),
+            ):
+                with patch.object(
+                    scheduler,
+                    "_dispatch_scheduled_publications",
+                    side_effect=lambda *_a, **_k: calls.append("publish"),
+                ):
+                    with patch.object(scheduler, "get_engine"):
+                        with patch.object(scheduler, "Session"):
+                            scheduler._tick()
+
+        self.assertEqual(calls, ["approve", "publish"])
 
 
 if __name__ == "__main__":
