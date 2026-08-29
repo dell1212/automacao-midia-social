@@ -127,3 +127,59 @@ def get_piece(
     if piece is None:
         raise HTTPException(status_code=404, detail="Content piece not found")
     return piece
+
+
+@router.post("/content/pieces/{piece_id}/approve", response_model=ContentPieceRead)
+def approve_piece(
+    piece_id: int,
+    session: Session = Depends(get_session),
+    tenant: ContentTenant = Depends(content_auth.verify_tenant_token),
+):
+    piece = pieces_service.get_piece(session, tenant_id=tenant.id, piece_id=piece_id)
+    if piece is None:
+        raise HTTPException(status_code=404, detail="Content piece not found")
+
+    updated = pieces_service.approve_piece(session, tenant_id=tenant.id, piece_id=piece_id)
+    if updated is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Piece must be pending_approval to approve, got '{piece.status.value}'",
+        )
+
+    audit.write_audit_log(
+        session,
+        tenant_id=tenant.id,
+        entity_type="content_piece",
+        entity_id=piece_id,
+        action="approved",
+        actor=f"tenant:{tenant.id}",
+    )
+    return updated
+
+
+@router.post("/content/pieces/{piece_id}/reject", response_model=ContentPieceRead)
+def reject_piece(
+    piece_id: int,
+    session: Session = Depends(get_session),
+    tenant: ContentTenant = Depends(content_auth.verify_tenant_token),
+):
+    piece = pieces_service.get_piece(session, tenant_id=tenant.id, piece_id=piece_id)
+    if piece is None:
+        raise HTTPException(status_code=404, detail="Content piece not found")
+
+    updated = pieces_service.reject_piece(session, tenant_id=tenant.id, piece_id=piece_id)
+    if updated is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Piece must be pending_approval to reject, got '{piece.status.value}'",
+        )
+
+    audit.write_audit_log(
+        session,
+        tenant_id=tenant.id,
+        entity_type="content_piece",
+        entity_id=piece_id,
+        action="rejected",
+        actor=f"tenant:{tenant.id}",
+    )
+    return updated
