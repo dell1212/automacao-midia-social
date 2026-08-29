@@ -27,12 +27,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<UserSessionRead | null>(null);
 
   useEffect(() => {
+    if (!PARENT_ORIGIN) {
+      setStatus("error");
+      return;
+    }
+
     const timeout = setTimeout(() => {
       setStatus((current) => (current === "waiting" ? "error" : current));
     }, WAIT_TIMEOUT_MS);
 
     async function handleMessage(event: MessageEvent) {
-      if (PARENT_ORIGIN && event.origin !== PARENT_ORIGIN) return;
+      if (event.origin !== PARENT_ORIGIN) return;
       if (event.data?.type !== "session" || typeof event.data.token !== "string") return;
 
       clearTimeout(timeout);
@@ -49,7 +54,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
 
     window.addEventListener("message", handleMessage);
-    window.parent.postMessage({ type: "ready" }, PARENT_ORIGIN ?? "*");
+    window.parent.postMessage({ type: "ready" }, PARENT_ORIGIN);
 
     return () => {
       window.removeEventListener("message", handleMessage);
