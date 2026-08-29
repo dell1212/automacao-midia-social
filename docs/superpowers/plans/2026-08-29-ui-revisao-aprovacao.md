@@ -907,6 +907,7 @@ from typing import Optional
 
 from sqlmodel import Session
 
+from app.models.content_publishing import PublicationRead
 from app.models.content_ui import PieceAssetRead, PieceDetailRead
 from app.services.content import assets as assets_service
 from app.services.content import pieces as pieces_service
@@ -934,9 +935,12 @@ def get_piece_detail(
         if not asset.is_intermediate
     ]
 
-    publications = publications_service.list_publications_for_piece(
-        session, content_piece_id=piece.id
-    )
+    publications = [
+        PublicationRead.model_validate(publication, from_attributes=True)
+        for publication in publications_service.list_publications_for_piece(
+            session, content_piece_id=piece.id
+        )
+    ]
 
     return PieceDetailRead(
         id=piece.id,
