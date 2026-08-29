@@ -869,10 +869,14 @@ Expected: PASS — 7 testes.
 
 - [ ] **Step 5: Escrever os testes falhos de `_fill_campaign_calendars`**
 
-Adicione a `test/services/test_content_automation_scheduler.py`:
+Adicione a `test/services/test_content_automation_scheduler.py`. Este passo introduz `EntitlementStatus`
+e `IntegrityError` no arquivo de teste pela primeira vez — os imports abaixo cobrem também os usos
+das Tasks 7-9 mais adiante no mesmo arquivo, não precisam ser repetidos:
 
 ```python
-from app.models.content import ContentPieceType
+from sqlalchemy.exc import IntegrityError
+
+from app.models.content import ContentPieceType, EntitlementStatus
 
 
 class TestFillCampaignCalendars(unittest.TestCase):
@@ -1263,9 +1267,11 @@ Expected: PASS — 5 testes.
 
 - [ ] **Step 5: Escrever os testes falhos de `_evaluate_pending_approvals`**
 
-Adicione a `test/services/test_content_automation_scheduler.py`:
+Adicione a `test/services/test_content_automation_scheduler.py`. Este passo introduz `ApprovalAction`
+e `ContentPieceStatus` no arquivo de teste pela primeira vez:
 
 ```python
+from app.models.content import ApprovalAction, ContentPieceStatus
 from app.services.content import approval_rules as approval_rules_service
 
 
@@ -1699,11 +1705,12 @@ Expected: FAIL — `AttributeError: module 'app.services.content.automation_sche
 
 - [ ] **Step 3: Implementar o lifecycle**
 
-Adicione ao final de `app/services/content/automation_scheduler.py`:
+Primeiro, adicione `import threading` ao bloco de imports no topo do arquivo (junto de `import os`) —
+este é o único ponto do arquivo onde `threading` é importado.
+
+Depois, adicione ao final de `app/services/content/automation_scheduler.py`:
 
 ```python
-import threading
-
 _stop_event = threading.Event()
 _scheduler_thread: Optional[threading.Thread] = None
 
@@ -1752,8 +1759,6 @@ def stop_scheduler() -> None:
         _scheduler_thread.join(timeout=5)
         _scheduler_thread = None
 ```
-
-Note que `threading` já deve estar importado uma única vez no topo do arquivo (mova o `import threading` do meio do arquivo para o bloco de imports no topo, junto de `import os`).
 
 - [ ] **Step 4: Rodar e confirmar sucesso**
 
