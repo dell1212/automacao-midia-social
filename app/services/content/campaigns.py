@@ -38,3 +38,13 @@ def get_campaign(
         .join(ContentClient, ContentClient.id == ContentCampaign.client_id)
         .where(ContentCampaign.id == campaign_id, ContentClient.tenant_id == tenant_id)
     ).first()
+
+
+def list_campaigns_for_tenant(session: Session, *, tenant_id: int) -> List[ContentCampaign]:
+    return list(
+        session.exec(
+            select(ContentCampaign)
+            .join(ContentClient, ContentClient.id == ContentCampaign.client_id)
+            .where(ContentClient.tenant_id == tenant_id)
+        ).all()
+    )
