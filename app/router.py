@@ -16,6 +16,7 @@ from app.controllers.v1.content import (
     avatars,
     campaigns,
     clients,
+    generation_templates,
     models,
     pieces,
     providers,
@@ -38,6 +39,7 @@ root_api_router.include_router(social_accounts.router)
 root_api_router.include_router(avatars.router)
 root_api_router.include_router(campaigns.router)
 root_api_router.include_router(approval_rules.router)
+root_api_router.include_router(generation_templates.router)
 root_api_router.include_router(pieces.router)
 root_api_router.include_router(providers.router)
 root_api_router.include_router(publications.router)
