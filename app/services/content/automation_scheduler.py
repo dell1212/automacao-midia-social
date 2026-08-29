@@ -15,14 +15,17 @@ from app.models.content import (
     ContentPiece,
     ContentPieceCreate,
     ContentPieceStatus,
+    ContentSocialAccount,
     ContentTenant,
     EntitlementStatus,
     RiskLevel,
 )
+from app.models.content_publishing import ContentSocialPublication
 from app.services.content import approval_rules as approval_rules_service
 from app.services.content import audit
 from app.services.content import generation_templates as templates_service
 from app.services.content import pieces as pieces_service
+from app.services.content import publications as publications_service
 
 TICK_SECONDS = float(os.environ.get("CONTENT_AUTOMATION_TICK_SECONDS", 300))
 _BATCH_LIMIT = int(os.environ.get("CONTENT_AUTOMATION_BATCH_SIZE", 50))
@@ -244,3 +247,57 @@ def _evaluate_pending_approvals(session: Session, *, batch_limit: int) -> None:
             action=f"approval_action:{action.value}",
             actor="system:approval_engine",
         )
+
+
+def _dispatch_scheduled_publications(session: Session, *, batch_limit: int) -> None:
+    """Passe 3: dispara resolve_publication_request uma vez por piece devida.
+
+    O NOT EXISTS é a fronteira entre este motor (S4) e o executor da fase 3
+    (S3): depois que a primeira linha de content_social_publications existe
+    para uma piece, o ciclo de vida inteiro (retry, sucesso, falha) já é
+    responsabilidade só da fase 3 — este passe nunca mais toca essa piece.
+    """
+    now = datetime.utcnow()
+    due_piece_ids_subquery = (
+        select(ContentSocialPublication.content_piece_id).distinct()
+    )
+    pieces = session.exec(
+        select(ContentPiece)
+        .where(
+            ContentPiece.status == ContentPieceStatus.approved,
+            ContentPiece.scheduled_for.is_not(None),
+            ContentPiece.scheduled_for <= now,
+            ContentPiece.id.not_in(due_piece_ids_subquery),
+        )
+        .limit(batch_limit)
+    ).all()
+
+    for piece in pieces:
+        campaign = session.get(ContentCampaign, piece.campaign_id)
+        client = session.get(ContentClient, campaign.client_id)
+        tenant = session.get(ContentTenant, client.tenant_id)
+        if tenant is None or tenant.entitlement_status != EntitlementStatus.active:
+            continue
+
+        accounts = session.exec(
+            select(ContentSocialAccount).where(
+                ContentSocialAccount.client_id == client.id,
+                ContentSocialAccount.status == "active",
+            )
+        ).all()
+        if not accounts:
+            continue
+
+        try:
+            publications_service.resolve_publication_request(
+                session, piece=piece, social_account_ids=[account.id for account in accounts]
+            )
+        except IntegrityError:
+            # Outra réplica já enfileirou este par piece/conta (mesma
+            # UniqueConstraint(content_piece_id, social_account_id) que a
+            # fase 3 já protege) — corrida normal entre réplicas.
+            session.rollback()
+            logger.debug(
+                f"piece {piece.id}: concurrent scheduled-publish dispatch — "
+                f"another replica won the race"
+            )

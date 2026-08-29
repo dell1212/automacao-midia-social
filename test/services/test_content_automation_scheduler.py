@@ -10,6 +10,7 @@ from app.models.content import (
     ContentCategory,
     ContentPieceStatus,
     ContentPieceType,
+    ContentSocialAccount,
     EntitlementStatus,
     RiskLevel,
 )
@@ -17,6 +18,7 @@ from app.services.content import approval_rules as approval_rules_service
 from app.services.content import automation_scheduler as scheduler
 from app.services.content import generation_templates as templates_service
 from app.services.content import pieces as pieces_service
+from app.services.content import publications as publications_service
 
 
 class TestNextSlot(unittest.TestCase):
@@ -349,6 +351,66 @@ class TestEvaluatePendingApprovals(unittest.TestCase):
         ).upper()
         self.assertIn("STATUS = 'PENDING_APPROVAL'", compiled)
         self.assertIn("ID = 1", compiled)
+
+
+class TestDispatchScheduledPublications(unittest.TestCase):
+    def test_skips_when_tenant_not_active(self):
+        piece = MagicMock(id=1, campaign_id=1)
+        session = MagicMock()
+        session.exec.return_value.all.side_effect = [[piece], []]
+        session.get.side_effect = lambda model, id_: {
+            ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
+            ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
+            ("ContentTenant", 1): MagicMock(id=1, entitlement_status=EntitlementStatus.inactive),
+        }.get((model.__name__, id_))
+
+        with patch.object(publications_service, "resolve_publication_request") as resolve:
+            scheduler._dispatch_scheduled_publications(session, batch_limit=50)
+
+        resolve.assert_not_called()
+
+    def test_resolves_publication_for_all_active_accounts_of_the_client(self):
+        piece = MagicMock(id=1, campaign_id=1)
+        accounts = [MagicMock(id=10), MagicMock(id=11)]
+        session = MagicMock()
+        session.exec.return_value.all.side_effect = [[piece], accounts]
+        session.get.side_effect = lambda model, id_: {
+            ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
+            ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
+            ("ContentTenant", 1): MagicMock(id=1, entitlement_status=EntitlementStatus.active),
+        }.get((model.__name__, id_))
+
+        with patch.object(
+            publications_service, "resolve_publication_request", return_value=([], [])
+        ) as resolve:
+            scheduler._dispatch_scheduled_publications(session, batch_limit=50)
+
+        resolve.assert_called_once()
+        _, kwargs = resolve.call_args
+        self.assertIs(kwargs["piece"], piece)
+        self.assertEqual(kwargs["social_account_ids"], [10, 11])
+
+    def test_integrity_error_on_one_piece_does_not_stop_the_batch(self):
+        piece_a = MagicMock(id=1, campaign_id=1)
+        piece_b = MagicMock(id=2, campaign_id=1)
+        accounts = [MagicMock(id=10)]
+        session = MagicMock()
+        session.exec.return_value.all.side_effect = [[piece_a, piece_b], accounts, accounts]
+        session.get.side_effect = lambda model, id_: {
+            ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
+            ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
+            ("ContentTenant", 1): MagicMock(id=1, entitlement_status=EntitlementStatus.active),
+        }.get((model.__name__, id_))
+
+        with patch.object(
+            publications_service,
+            "resolve_publication_request",
+            side_effect=[IntegrityError("stmt", {}, Exception("dup")), ([], [])],
+        ) as resolve:
+            scheduler._dispatch_scheduled_publications(session, batch_limit=50)
+
+        self.assertEqual(resolve.call_count, 2)
+        session.rollback.assert_called_once()
 
 
 if __name__ == "__main__":
