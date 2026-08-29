@@ -85,13 +85,13 @@ class TestListPieces(unittest.TestCase):
 
         self.assertEqual(result, ["piece-a", "piece-b"])
         statement = session.exec.call_args.args[0]
-        compiled = str(
-            statement.compile(
+        where_compiled = str(
+            statement.whereclause.compile(
                 dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
             )
         ).upper()
-        self.assertIn("CAMPAIGN_ID = 1", compiled)
-        self.assertNotIn("STATUS", compiled)
+        self.assertIn("CAMPAIGN_ID = 1", where_compiled)
+        self.assertNotIn("STATUS", where_compiled)
 
     def test_status_filter_is_applied_when_given(self):
         session = MagicMock()

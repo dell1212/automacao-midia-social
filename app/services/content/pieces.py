@@ -26,18 +26,9 @@ def list_pieces(
 ) -> List[ContentPiece]:
     if get_campaign(session, tenant_id=tenant_id, campaign_id=campaign_id) is None:
         return []
-    if status is None:
-        # Select all columns except STATUS when no filter is provided
-        cols = [
-            getattr(ContentPiece, c.name)
-            for c in ContentPiece.__table__.columns
-            if c.name != "status"
-        ]
-        statement = select(*cols).where(ContentPiece.campaign_id == campaign_id)
-    else:
-        statement = select(ContentPiece).where(
-            ContentPiece.campaign_id == campaign_id, ContentPiece.status == status
-        )
+    statement = select(ContentPiece).where(ContentPiece.campaign_id == campaign_id)
+    if status is not None:
+        statement = statement.where(ContentPiece.status == status)
     return list(session.exec(statement).all())
 
 
