@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+from sqlalchemy.dialects import postgresql
+
 from app.models.content import ContentCategory, ContentPieceType, RiskLevel
 from app.models.content_generation import GenerationKind
 from app.services.content import pieces as pieces_service
@@ -152,6 +154,20 @@ class TestApprovePiece(unittest.TestCase):
         session.commit.assert_called_once()
         session.refresh.assert_called_once_with(piece)
 
+        # Regression guard: the mocked rowcount above proves nothing about
+        # what predicate actually reached the DB. Compile the real statement
+        # passed to session.exec and assert the WHERE clause still ANDs both
+        # the id and the pending_approval status — a future edit that drops
+        # the status predicate would still pass every assertion above.
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("STATUS = 'PENDING_APPROVAL'", compiled)
+        self.assertIn("ID = 10", compiled)
+
     def test_returns_none_when_status_changed_concurrently(self):
         piece = MagicMock(id=10, status=ContentPieceStatus.pending_approval)
         session = MagicMock()
@@ -175,6 +191,18 @@ class TestRejectPiece(unittest.TestCase):
 
         self.assertIs(result, piece)
         session.commit.assert_called_once()
+
+        # Regression guard: same rationale as TestApprovePiece — assert on
+        # the real compiled statement so a dropped status predicate fails
+        # this test instead of silently going inert.
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("STATUS = 'PENDING_APPROVAL'", compiled)
+        self.assertIn("ID = 10", compiled)
 
     def test_returns_none_when_status_changed_concurrently(self):
         piece = MagicMock(id=10, status=ContentPieceStatus.pending_approval)
