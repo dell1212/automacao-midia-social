@@ -126,5 +126,66 @@ class TestCreatePiecePolicy(unittest.TestCase):
         self.assertFalse(piece.requires_human_review)
 
 
+from datetime import datetime
+
+from app.models.content import ContentPieceStatus
+
+
+class TestApprovePiece(unittest.TestCase):
+    def test_returns_none_when_piece_not_found(self):
+        session = MagicMock()
+
+        with patch.object(pieces_service, "get_piece", return_value=None):
+            result = pieces_service.approve_piece(session, tenant_id=1, piece_id=99)
+
+        self.assertIsNone(result)
+
+    def test_approves_when_still_pending_approval(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.pending_approval)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.approve_piece(session, tenant_id=1, piece_id=10)
+
+        self.assertIs(result, piece)
+        session.commit.assert_called_once()
+        session.refresh.assert_called_once_with(piece)
+
+    def test_returns_none_when_status_changed_concurrently(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.pending_approval)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 0
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.approve_piece(session, tenant_id=1, piece_id=10)
+
+        self.assertIsNone(result)
+        session.refresh.assert_not_called()
+
+
+class TestRejectPiece(unittest.TestCase):
+    def test_rejects_when_still_pending_approval(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.pending_approval)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.reject_piece(session, tenant_id=1, piece_id=10)
+
+        self.assertIs(result, piece)
+        session.commit.assert_called_once()
+
+    def test_returns_none_when_status_changed_concurrently(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.pending_approval)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 0
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.reject_piece(session, tenant_id=1, piece_id=10)
+
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main()

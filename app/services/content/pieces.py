@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, update
 
 from app.models.content import ContentCampaign, ContentClient, ContentPiece
 from app.services.content.campaigns import get_campaign
@@ -130,3 +130,62 @@ def create_piece(session: Session, *, tenant_id: int, payload) -> tuple[ContentP
             actor="system:generation",
         )
     return piece, True
+
+
+def _conditional_transition(
+    session: Session, *, piece_id: int, values: dict
+) -> bool:
+    """UPDATE guardado: só aplica se a piece ainda estiver pending_approval.
+
+    Fecha a corrida entre uma decisão automática (approval_action, Passe 2 do
+    scheduler) e uma ação manual do humano chegando ao mesmo tempo — quem
+    escrever primeiro vence, o outro descarta sem sobrescrever. Retorna se a
+    escrita realmente aconteceu.
+    """
+    result = session.exec(
+        update(ContentPiece)
+        .where(
+            ContentPiece.id == piece_id,
+            ContentPiece.status == ContentPieceStatus.pending_approval,
+        )
+        .values(**values)
+    )
+    session.commit()
+    return result.rowcount > 0
+
+
+def approve_piece(session: Session, *, tenant_id: int, piece_id: int) -> Optional[ContentPiece]:
+    piece = get_piece(session, tenant_id=tenant_id, piece_id=piece_id)
+    if piece is None:
+        return None
+    applied = _conditional_transition(
+        session,
+        piece_id=piece_id,
+        values={
+            "status": ContentPieceStatus.approved,
+            "approved_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        },
+    )
+    if not applied:
+        return None
+    session.refresh(piece)
+    return piece
+
+
+def reject_piece(session: Session, *, tenant_id: int, piece_id: int) -> Optional[ContentPiece]:
+    piece = get_piece(session, tenant_id=tenant_id, piece_id=piece_id)
+    if piece is None:
+        return None
+    applied = _conditional_transition(
+        session,
+        piece_id=piece_id,
+        values={
+            "status": ContentPieceStatus.rejected,
+            "updated_at": datetime.utcnow(),
+        },
+    )
+    if not applied:
+        return None
+    session.refresh(piece)
+    return piece
