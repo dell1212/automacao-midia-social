@@ -45,10 +45,20 @@ STALE_RUNNING_SECONDS = int(os.environ.get("CONTENT_PUBLISH_STALE_RUNNING_SECOND
 _executor = ThreadPoolExecutor(
     max_workers=WORKERS, thread_name_prefix="mpt-content-publish"
 )
+_executor_lock = threading.Lock()
 _platform_semaphores: dict[str, threading.BoundedSemaphore] = {}
 _platform_semaphores_lock = threading.Lock()
 _stop_event = threading.Event()
 _dispatcher_thread: Optional[threading.Thread] = None
+# Submitted-but-not-yet-finished work. The executor's internal queue is
+# unbounded, so without this counter a tick can claim BATCH_SIZE rows every
+# interval regardless of how many workers are free: the surplus sits in that
+# queue already marked `running` with `updated_at` stamped at claim time,
+# and a later tick's stale-running sweep reclaims a row that was never stuck,
+# just queued — a second worker then calls the same platform's publish() a
+# second time, an actual duplicate post.
+_in_flight_lock = threading.Lock()
+_in_flight = 0
 
 
 def _platform_semaphore(platform: str) -> threading.BoundedSemaphore:
@@ -170,15 +180,26 @@ def _handle_success(
     row.completed_at = datetime.utcnow()
     row.updated_at = datetime.utcnow()
     session.add(row)
-    session.commit()
 
+    # No commit between the row write above and the piece write below: the
+    # spec ("Atualização transacional unificada") requires row + piece to
+    # land atomically, otherwise a crash in the gap leaves the publication
+    # `succeeded` while the piece never reaches `posted`.
+    #
     # Lock the piece row for the recompute+write. Without this, two workers
     # finishing near-simultaneously on the same piece (the normal case for a
     # cross-post to N platforms) each recompute from their own read and the
     # later commit silently overwrites the earlier one's result — permanent
     # drift, not a transient race, since nothing recomputes again until the
     # next publish event on that piece.
-    piece = session.get(ContentPiece, piece.id, with_for_update=True)
+    #
+    # session.refresh(), not session.get(): `piece` is already loaded in this
+    # session, and session.get(..., with_for_update=True) emits the locking
+    # SELECT but leaves the already-loaded attributes untouched without
+    # populate_existing=True — the same footgun documented above for `row`,
+    # which would let `piece.posted_at` read as None here even though the row
+    # just locked already carries a value.
+    session.refresh(piece, with_for_update=True)
     piece.publication_summary = recompute_publication_summary(
         session, content_piece_id=piece.id
     )
@@ -229,11 +250,12 @@ def _handle_failure(
     row.status = PublicationStatus.failed
     row.completed_at = datetime.utcnow()
     session.add(row)
-    session.commit()
 
-    # Same piece-row lock as _handle_success, same reason: concurrent
+    # Same single-transaction requirement as _handle_success — no commit
+    # between the row write and the piece write. Same piece-row lock too, and
+    # session.refresh() for the same reason documented there: concurrent
     # workers on the same piece must not race a read-recompute-write.
-    piece = session.get(ContentPiece, piece.id, with_for_update=True)
+    session.refresh(piece, with_for_update=True)
     piece.publication_summary = recompute_publication_summary(
         session, content_piece_id=piece.id
     )
@@ -255,20 +277,21 @@ def execute_claimed_publication(session: Session, publication_id: int) -> None:
     account = session.get(ContentSocialAccount, row.social_account_id)
 
     # Setup (asset/adapter/credential lookup) and the adapter call itself are
-    # both inside this try — a row already marked `running` by the claim
-    # must never be left stuck there. Anything unexpected here still has to
-    # resolve to retrying/failed, not silence.
+    # both wrapped — a row already marked `running` by the claim must never be
+    # left stuck there. Anything unexpected here still has to resolve to
+    # retrying/failed, not silence.
     try:
         asset = get_final_asset(session, content_piece_id=row.content_piece_id)
+        if asset is None:
+            # Second layer of defense: resolve_publication_request already
+            # rejects this pair at request time, but a piece's final asset
+            # could be removed/replaced between enqueue and dispatch.
+            raise PublicationError(
+                PublicationErrorCode.unsupported_capability,
+                "content piece has no final asset to publish",
+            )
         adapter = get_adapter(row.platform)
         credentials = load_credentials(account)
-
-        semaphore = _platform_semaphore(row.platform)
-        semaphore.acquire()
-        try:
-            result = adapter.publish(piece, asset, account, credentials)
-        finally:
-            semaphore.release()
     except PublicationError as error:
         _handle_failure(session, row, piece, error, claimed_attempt_count)
         return
@@ -277,10 +300,50 @@ def execute_claimed_publication(session: Session, publication_id: int) -> None:
             session,
             row,
             piece,
-            PublicationError(PublicationErrorCode.transient, str(error)),
+            PublicationError(PublicationErrorCode.invalid_params, str(error)),
             claimed_attempt_count,
         )
         return
+
+    # Close the read transaction before the network call: holding it open for
+    # the duration of adapter.publish() (up to ~430s in the worst case, see
+    # STALE_RUNNING_SECONDS) risks pool exhaustion or being killed by a
+    # managed Postgres's idle-in-transaction timeout.
+    #
+    # expire_on_commit=False is what makes that release actually stick: with
+    # the default, this commit expires `piece`/`asset`/`account`, and the very
+    # first attribute the adapter touches (piece.type, asset.url) lazy-loads
+    # and immediately re-opens a transaction that then stays open for the
+    # whole HTTP call. The handlers below re-read under an explicit
+    # session.refresh(..., with_for_update=True), so nothing downstream relies
+    # on commit-time expiry for freshness.
+    session.expire_on_commit = False
+    session.commit()
+
+    semaphore = _platform_semaphore(row.platform)
+    semaphore.acquire()
+    try:
+        result = adapter.publish(piece, asset, account, credentials)
+    except PublicationError as error:
+        _handle_failure(session, row, piece, error, claimed_attempt_count)
+        return
+    except Exception as error:
+        # Every genuinely retryable failure mode (rate limit, network error,
+        # 5xx) already raises PublicationError with the right code via the
+        # base-adapter HTTP helpers, and is caught above. Anything landing
+        # here is a structural bug (a missing credentials field, an adapter
+        # coding error) that fails identically on every attempt — retrying it
+        # is pure waste and hides the real problem. Non-retryable.
+        _handle_failure(
+            session,
+            row,
+            piece,
+            PublicationError(PublicationErrorCode.invalid_params, str(error)),
+            claimed_attempt_count,
+        )
+        return
+    finally:
+        semaphore.release()
 
     _handle_success(session, row, piece, result, claimed_attempt_count)
 
@@ -293,12 +356,34 @@ def _run_and_log(publication_id: int) -> None:
             logger.exception(f"unhandled error executing publication {publication_id}")
 
 
+def _mark_done(_future) -> None:
+    global _in_flight
+    with _in_flight_lock:
+        _in_flight -= 1
+
+
 def _tick() -> None:
+    """Claim only as much work as the pool can actually start — never more.
+
+    `_in_flight` can never overshoot WORKERS: each submit increments it by
+    exactly the number of futures created and each future's completion
+    decrements it by 1, so `available <= 0` is the only guard needed.
+    """
+    global _in_flight
+    with _in_flight_lock:
+        available = WORKERS - _in_flight
+    if available <= 0:
+        return
     with Session(get_engine()) as session:
-        claimed = claim_due_publications(session, limit=BATCH_SIZE)
+        claimed = claim_due_publications(session, limit=min(BATCH_SIZE, available))
         claimed_ids = [row.id for row in claimed]
+    if not claimed_ids:
+        return
+    with _in_flight_lock:
+        _in_flight += len(claimed_ids)
     for publication_id in claimed_ids:
-        _executor.submit(_run_and_log, publication_id)
+        future = _executor.submit(_run_and_log, publication_id)
+        future.add_done_callback(_mark_done)
 
 
 def _loop() -> None:
@@ -311,9 +396,19 @@ def _loop() -> None:
 
 
 def start_dispatcher() -> None:
-    global _dispatcher_thread
+    # Always builds a *fresh* executor: stop_dispatcher() shuts the previous
+    # one down for good, so a stop→start cycle would otherwise come back with
+    # a permanently-dead pool. The module-level default above stays eager for
+    # callers that drive _tick()/execute_claimed_publication() directly.
+    global _dispatcher_thread, _executor, _in_flight
     if _dispatcher_thread is not None:
         return
+    with _executor_lock:
+        _executor = ThreadPoolExecutor(
+            max_workers=WORKERS, thread_name_prefix="mpt-content-publish"
+        )
+    with _in_flight_lock:
+        _in_flight = 0
     _stop_event.clear()
     _dispatcher_thread = threading.Thread(
         target=_loop, name="mpt-content-publish-dispatcher", daemon=True
@@ -322,8 +417,13 @@ def start_dispatcher() -> None:
 
 
 def stop_dispatcher() -> None:
+    # Stopping the polling thread is not enough — submitted-but-unfinished
+    # futures would be abandoned mid-publish, leaving rows stuck in `running`
+    # until the stale sweep. Drain the pool before returning.
     global _dispatcher_thread
     _stop_event.set()
     if _dispatcher_thread is not None:
         _dispatcher_thread.join(timeout=5)
         _dispatcher_thread = None
+    with _executor_lock:
+        _executor.shutdown(wait=True)

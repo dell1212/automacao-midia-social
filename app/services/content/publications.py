@@ -87,6 +87,21 @@ def resolve_publication_request(
             )
             continue
 
+        # No adapter's check_compatibility() looks at `asset`, so without this
+        # a piece with no final asset would silently produce `queued` rows
+        # that can only fail later inside the dispatcher — the opposite of the
+        # spec's "Compatibilidade — fail-fast".
+        if asset is None:
+            rejected.append(
+                {
+                    "social_account_id": social_account_id,
+                    "platform": account.platform,
+                    "reason": "unsupported_capability",
+                    "message": "Content piece has no final asset to publish",
+                }
+            )
+            continue
+
         try:
             adapter = get_adapter(account.platform)
             adapter.check_compatibility(piece, asset)

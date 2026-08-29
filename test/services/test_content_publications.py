@@ -98,6 +98,33 @@ class TestResolvePublicationRequest(unittest.TestCase):
         self.assertEqual(rejected[0]["reason"], "unsupported_capability")
         session.add.assert_not_called()
 
+    def test_missing_final_asset_is_rejected_without_creating_a_row(self):
+        """No adapter's check_compatibility() looks at `asset`, so without an
+        explicit guard a piece with no final asset silently becomes a `queued`
+        row that can only fail later in the dispatcher — the spec requires
+        fail-fast at request time."""
+        session = MagicMock()
+        piece = _piece()
+        account = _account()
+        adapter = MagicMock()
+
+        with patch.object(
+            publications_service, "get_social_account_for_piece", return_value=account
+        ):
+            with patch.object(publications_service, "get_final_asset", return_value=None):
+                with patch.object(
+                    publications_service, "get_adapter", return_value=adapter
+                ):
+                    accepted, rejected = publications_service.resolve_publication_request(
+                        session, piece=piece, social_account_ids=[5]
+                    )
+
+        self.assertEqual(accepted, [])
+        self.assertEqual(rejected[0]["reason"], "unsupported_capability")
+        self.assertEqual(rejected[0]["platform"], "instagram")
+        adapter.check_compatibility.assert_not_called()
+        session.add.assert_not_called()
+
     def test_new_pair_is_created_as_queued(self):
         session = MagicMock()
         session.exec.return_value.first.return_value = None  # no existing row
