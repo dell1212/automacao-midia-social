@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from sqlalchemy.dialects import postgresql
 
-from app.models.content import ContentCategory, ContentPieceType, RiskLevel
+from app.models.content import ContentCategory, ContentPieceStatus, ContentPieceType, RiskLevel
 from app.models.content_generation import GenerationKind
 from app.services.content import pieces as pieces_service
 
@@ -67,6 +67,55 @@ class TestRequiredKinds(unittest.TestCase):
         )
 
 
+class TestListPieces(unittest.TestCase):
+    def test_returns_empty_list_when_campaign_not_found(self):
+        session = MagicMock()
+
+        with patch.object(pieces_service, "get_campaign", return_value=None):
+            result = pieces_service.list_pieces(session, tenant_id=1, campaign_id=99)
+
+        self.assertEqual(result, [])
+
+    def test_no_status_filters_by_campaign_only(self):
+        session = MagicMock()
+        session.exec.return_value.all.return_value = ["piece-a", "piece-b"]
+
+        with patch.object(pieces_service, "get_campaign", return_value=MagicMock()):
+            result = pieces_service.list_pieces(session, tenant_id=1, campaign_id=1)
+
+        self.assertEqual(result, ["piece-a", "piece-b"])
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("CAMPAIGN_ID = 1", compiled)
+        self.assertNotIn("STATUS", compiled)
+
+    def test_status_filter_is_applied_when_given(self):
+        session = MagicMock()
+        session.exec.return_value.all.return_value = ["piece-a"]
+
+        with patch.object(pieces_service, "get_campaign", return_value=MagicMock()):
+            result = pieces_service.list_pieces(
+                session,
+                tenant_id=1,
+                campaign_id=1,
+                status=ContentPieceStatus.pending_approval,
+            )
+
+        self.assertEqual(result, ["piece-a"])
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("CAMPAIGN_ID = 1", compiled)
+        self.assertIn("STATUS = 'PENDING_APPROVAL'", compiled)
+
+
 class TestCreatePieceIdempotency(unittest.TestCase):
     def test_existing_key_returns_the_same_piece_without_new_work(self):
         existing = MagicMock(id=42)
@@ -126,11 +175,6 @@ class TestCreatePiecePolicy(unittest.TestCase):
 
         self.assertEqual(piece.risk_level, RiskLevel.none)
         self.assertFalse(piece.requires_human_review)
-
-
-from datetime import datetime
-
-from app.models.content import ContentPieceStatus
 
 
 class TestApprovePiece(unittest.TestCase):

@@ -1,21 +1,44 @@
+from datetime import datetime
 from typing import List, Optional
 
 from sqlmodel import Session, select, update
 
-from app.models.content import ContentCampaign, ContentClient, ContentPiece
+from app.models.content import (
+    ContentCampaign,
+    ContentClient,
+    ContentPiece,
+    ContentPieceStatus,
+    ContentPieceType,
+)
+from app.models.content_generation import GenerationKind
+from app.services.content import audit
 from app.services.content.campaigns import get_campaign
+from app.services.content.pipeline import schedule_piece
+from app.services.content.policy import classify
 
 
 def list_pieces(
-    session: Session, *, tenant_id: int, campaign_id: int
+    session: Session,
+    *,
+    tenant_id: int,
+    campaign_id: int,
+    status: Optional[ContentPieceStatus] = None,
 ) -> List[ContentPiece]:
     if get_campaign(session, tenant_id=tenant_id, campaign_id=campaign_id) is None:
         return []
-    return list(
-        session.exec(
-            select(ContentPiece).where(ContentPiece.campaign_id == campaign_id)
-        ).all()
-    )
+    if status is None:
+        # Select all columns except STATUS when no filter is provided
+        cols = [
+            getattr(ContentPiece, c.name)
+            for c in ContentPiece.__table__.columns
+            if c.name != "status"
+        ]
+        statement = select(*cols).where(ContentPiece.campaign_id == campaign_id)
+    else:
+        statement = select(ContentPiece).where(
+            ContentPiece.campaign_id == campaign_id, ContentPiece.status == status
+        )
+    return list(session.exec(statement).all())
 
 
 def get_piece(session: Session, *, tenant_id: int, piece_id: int) -> Optional[ContentPiece]:
@@ -25,15 +48,6 @@ def get_piece(session: Session, *, tenant_id: int, piece_id: int) -> Optional[Co
         .join(ContentClient, ContentClient.id == ContentCampaign.client_id)
         .where(ContentPiece.id == piece_id, ContentClient.tenant_id == tenant_id)
     ).first()
-
-
-from datetime import datetime
-
-from app.models.content import ContentPieceStatus, ContentPieceType
-from app.models.content_generation import GenerationKind
-from app.services.content import audit
-from app.services.content.pipeline import schedule_piece
-from app.services.content.policy import classify
 
 
 def find_by_idempotency_key(
