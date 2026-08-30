@@ -259,5 +259,189 @@ class TestRejectPiece(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class TestUpdatePiece(unittest.TestCase):
+    def test_returns_none_when_piece_not_found(self):
+        session = MagicMock()
+
+        with patch.object(pieces_service, "get_piece", return_value=None):
+            result = pieces_service.update_piece(
+                session, tenant_id=1, piece_id=99, generation_prompt="new"
+            )
+
+        self.assertIsNone(result)
+
+    def test_diffs_only_changed_fields(self):
+        piece = MagicMock(
+            id=10,
+            status=ContentPieceStatus.draft,
+            generation_prompt="a cat",
+            avatar_id=None,
+            voice_id=None,
+            content_category=None,
+            risk_level=RiskLevel.none,
+            scheduled_for=None,
+        )
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.update_piece(
+                session,
+                tenant_id=1,
+                piece_id=10,
+                generation_prompt="a cat",  # unchanged — must not appear in diff
+                risk_level=RiskLevel.high,
+            )
+
+        self.assertIsNotNone(result)
+        updated, diff = result
+        self.assertIs(updated, piece)
+        self.assertEqual(
+            diff, {"risk_level": {"before": "none", "after": "high"}}
+        )
+        self.assertNotIn("status", diff)
+
+    def test_reverts_approved_to_pending_approval_and_logs_it(self):
+        piece = MagicMock(
+            id=10,
+            status=ContentPieceStatus.approved,
+            generation_prompt="a cat",
+            avatar_id=None,
+            voice_id=None,
+            content_category=None,
+            risk_level=RiskLevel.none,
+            scheduled_for=None,
+        )
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.update_piece(
+                session, tenant_id=1, piece_id=10, generation_prompt="a dog"
+            )
+
+        updated, diff = result
+        self.assertEqual(
+            diff["status"], {"before": "approved", "after": "pending_approval"}
+        )
+        self.assertEqual(
+            diff["generation_prompt"], {"before": "a cat", "after": "a dog"}
+        )
+
+    def test_returns_none_when_posted_concurrently(self):
+        piece = MagicMock(
+            id=10,
+            status=ContentPieceStatus.pending_approval,
+            generation_prompt="a cat",
+            avatar_id=None,
+            voice_id=None,
+            content_category=None,
+            risk_level=RiskLevel.none,
+            scheduled_for=None,
+        )
+        session = MagicMock()
+        session.exec.return_value.rowcount = 0
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.update_piece(
+                session, tenant_id=1, piece_id=10, generation_prompt="a dog"
+            )
+
+        self.assertIsNone(result)
+        session.refresh.assert_not_called()
+
+    def test_where_clause_excludes_posted(self):
+        piece = MagicMock(
+            id=10,
+            status=ContentPieceStatus.draft,
+            generation_prompt="a cat",
+            avatar_id=None,
+            voice_id=None,
+            content_category=None,
+            risk_level=RiskLevel.none,
+            scheduled_for=None,
+        )
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            pieces_service.update_piece(
+                session, tenant_id=1, piece_id=10, generation_prompt="a dog"
+            )
+
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("STATUS != 'POSTED'", compiled)
+        self.assertIn("ID = 10", compiled)
+
+
+class TestMarkAssetReplaced(unittest.TestCase):
+    def test_returns_none_when_piece_not_found(self):
+        session = MagicMock()
+
+        with patch.object(pieces_service, "get_piece", return_value=None):
+            result = pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=99)
+
+        self.assertIsNone(result)
+
+    def test_no_diff_when_piece_not_in_decided_state(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.draft)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=10)
+
+        self.assertIsNotNone(result)
+        updated, diff = result
+        self.assertIs(updated, piece)
+        self.assertEqual(diff, {})
+
+    def test_reverts_approved_to_pending_approval_and_logs_it(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.approved)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=10)
+
+        updated, diff = result
+        self.assertEqual(
+            diff["status"], {"before": "approved", "after": "pending_approval"}
+        )
+
+    def test_returns_none_when_posted_concurrently(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.pending_approval)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 0
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=10)
+
+        self.assertIsNone(result)
+        session.refresh.assert_not_called()
+
+    def test_where_clause_excludes_posted(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.draft)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=10)
+
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("STATUS != 'POSTED'", compiled)
+        self.assertIn("ID = 10", compiled)
+
+
 if __name__ == "__main__":
     unittest.main()

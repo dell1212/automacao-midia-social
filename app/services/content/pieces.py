@@ -1,14 +1,17 @@
 from datetime import datetime
+from enum import Enum
 from typing import List, Optional
 
 from sqlmodel import Session, select, update
 
 from app.models.content import (
     ContentCampaign,
+    ContentCategory,
     ContentClient,
     ContentPiece,
     ContentPieceStatus,
     ContentPieceType,
+    RiskLevel,
 )
 from app.models.content_generation import GenerationKind
 from app.services.content import audit
@@ -194,3 +197,116 @@ def reject_piece(session: Session, *, tenant_id: int, piece_id: int) -> Optional
         return None
     session.refresh(piece)
     return piece
+
+
+def _serialize_for_log(value):
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _status_reset_for_edit(piece: ContentPiece) -> tuple[dict, dict]:
+    """An edit to an approved/rejected piece reverts it to pending_approval —
+    a manual correction can't silently stay 'approved'. Returns
+    (values_for_update, diff_for_audit_log); both empty when the piece isn't
+    currently in a decided state.
+    """
+    if piece.status not in (ContentPieceStatus.approved, ContentPieceStatus.rejected):
+        return {}, {}
+    values = {"status": ContentPieceStatus.pending_approval, "approved_at": None}
+    diff = {
+        "status": {
+            "before": piece.status.value,
+            "after": ContentPieceStatus.pending_approval.value,
+        }
+    }
+    return values, diff
+
+
+def _conditional_edit(session: Session, *, piece_id: int, values: dict) -> bool:
+    """UPDATE guardado: só aplica se a piece não estiver posted.
+
+    Mesmo princípio de _conditional_transition, mas a guarda é 'não postada'
+    em vez de 'pending_approval' — edição manual é permitida em qualquer
+    status anterior a posted.
+    """
+    result = session.exec(
+        update(ContentPiece)
+        .where(
+            ContentPiece.id == piece_id,
+            ContentPiece.status != ContentPieceStatus.posted,
+        )
+        .values(**values)
+    )
+    session.commit()
+    return result.rowcount > 0
+
+
+def update_piece(
+    session: Session,
+    *,
+    tenant_id: int,
+    piece_id: int,
+    generation_prompt: Optional[str] = None,
+    avatar_id: Optional[int] = None,
+    voice_id: Optional[str] = None,
+    content_category: Optional[ContentCategory] = None,
+    risk_level: Optional[RiskLevel] = None,
+    scheduled_for: Optional[datetime] = None,
+) -> Optional[tuple[ContentPiece, dict]]:
+    piece = get_piece(session, tenant_id=tenant_id, piece_id=piece_id)
+    if piece is None:
+        return None
+
+    changes = {
+        "generation_prompt": generation_prompt,
+        "avatar_id": avatar_id,
+        "voice_id": voice_id,
+        "content_category": content_category,
+        "risk_level": risk_level,
+        "scheduled_for": scheduled_for,
+    }
+    values = {"updated_at": datetime.utcnow()}
+    diff = {}
+    for field, new_value in changes.items():
+        if new_value is None:
+            continue
+        old_value = getattr(piece, field)
+        if old_value != new_value:
+            diff[field] = {
+                "before": _serialize_for_log(old_value),
+                "after": _serialize_for_log(new_value),
+            }
+            values[field] = new_value
+
+    reset_values, reset_diff = _status_reset_for_edit(piece)
+    values.update(reset_values)
+    diff.update(reset_diff)
+
+    applied = _conditional_edit(session, piece_id=piece_id, values=values)
+    if not applied:
+        return None
+    session.refresh(piece)
+    return piece, diff
+
+
+def mark_asset_replaced(
+    session: Session, *, tenant_id: int, piece_id: int
+) -> Optional[tuple[ContentPiece, dict]]:
+    """Bumps updated_at and applies the same approved/rejected -> pending_approval
+    reset as update_piece, for the asset-replace endpoint — it doesn't change
+    any ContentPiece column directly, so it has no field diff of its own.
+    """
+    piece = get_piece(session, tenant_id=tenant_id, piece_id=piece_id)
+    if piece is None:
+        return None
+    values = {"updated_at": datetime.utcnow()}
+    reset_values, diff = _status_reset_for_edit(piece)
+    values.update(reset_values)
+    applied = _conditional_edit(session, piece_id=piece_id, values=values)
+    if not applied:
+        return None
+    session.refresh(piece)
+    return piece, diff
