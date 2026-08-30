@@ -19,6 +19,12 @@ class _StubAdapter(base.PublisherAdapter):
 
 class TestAdapterRegistry(unittest.TestCase):
     def setUp(self):
+        # The real adapters register themselves at import time, so clearing
+        # the registry without restoring it leaves every later test in the
+        # same process unable to resolve a real platform.
+        saved = dict(base._ADAPTER_REGISTRY)
+        self.addCleanup(lambda: base._ADAPTER_REGISTRY.update(saved))
+        self.addCleanup(base._ADAPTER_REGISTRY.clear)
         base._ADAPTER_REGISTRY.clear()
 
     def test_registered_adapter_is_returned(self):

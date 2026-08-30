@@ -10,6 +10,7 @@ from app.models.content_publishing import (
     PublishRequest,
     PublishResponse,
 )
+from app.services.content import audit
 from app.services.content import pieces as pieces_service
 from app.services.content import publications as publications_service
 
@@ -39,6 +40,19 @@ def publish_piece(
     accepted, rejected = publications_service.resolve_publication_request(
         session, piece=piece, social_account_ids=payload.social_account_ids
     )
+
+    # Only an accepted account actually queues a publication — a request that
+    # resolves to nothing mutated no state, so it gets no entry (same no-op
+    # rule the piece edit endpoint follows).
+    if accepted:
+        audit.write_audit_log(
+            session,
+            tenant_id=tenant.id,
+            entity_type="content_piece",
+            entity_id=piece_id,
+            action="publish_requested",
+            actor=f"tenant:{tenant.id}",
+        )
 
     return PublishResponse(
         accepted=[
