@@ -189,5 +189,33 @@ class TestCrossTenantReturns404(UIConfigTestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class TestTemplateAvatarCrossTenantRejected(UIConfigTestCase):
+    role = "admin"
+
+    def test_create_template_rejects_avatar_from_another_tenant(self):
+        with patch("app.services.content.avatars.get_avatar", return_value=None):
+            response = self.client.post(
+                "/api/v1/content/ui/config/campaigns/1/templates",
+                json={
+                    "campaign_id": 1,
+                    "type": "image",
+                    "is_synthetic_media": False,
+                    "aspect_ratio": "9:16",
+                    "avatar_id": 999,
+                },
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_update_template_rejects_avatar_from_another_tenant(self):
+        with patch("app.services.content.avatars.get_avatar", return_value=None):
+            response = self.client.put(
+                "/api/v1/content/ui/config/templates/1",
+                json={"avatar_id": 999},
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -608,6 +608,10 @@ def create_template(
     content_auth.require_role(user_session, "admin")
     if campaign_id != payload.campaign_id:
         raise HTTPException(status_code=422, detail="campaign_id in path and body must match")
+    if payload.avatar_id is not None and avatars_service.get_avatar(
+        session, tenant_id=user_session.tenant.id, avatar_id=payload.avatar_id
+    ) is None:
+        raise HTTPException(status_code=422, detail="avatar_id not found in this tenant")
     template = templates_service.create_template(
         session,
         tenant_id=user_session.tenant.id,
@@ -643,6 +647,10 @@ def update_template(
     user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
 ):
     content_auth.require_role(user_session, "admin")
+    if payload.avatar_id is not None and avatars_service.get_avatar(
+        session, tenant_id=user_session.tenant.id, avatar_id=payload.avatar_id
+    ) is None:
+        raise HTTPException(status_code=422, detail="avatar_id not found in this tenant")
     template = templates_service.update_template(
         session,
         tenant_id=user_session.tenant.id,

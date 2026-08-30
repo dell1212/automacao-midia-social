@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../lib/apiClient";
 import { RequireRole } from "../../components/RequireRole";
-import type { Campaign, GenerationTemplate } from "../../lib/types";
+import type { Avatar, Campaign, GenerationTemplate } from "../../lib/types";
 
 export function GenerationTemplates() {
   const queryClient = useQueryClient();
@@ -10,10 +10,21 @@ export function GenerationTemplates() {
   const [type, setType] = useState<"video" | "image" | "audio">("image");
   const [generationPrompt, setGenerationPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("9:16");
+  const [avatarId, setAvatarId] = useState<number | null>(null);
+  const [voiceId, setVoiceId] = useState("");
 
   const campaigns = useQuery({
     queryKey: ["config", "campaigns"],
     queryFn: () => apiClient.get<Campaign[]>("/content/ui/config/campaigns"),
+  });
+
+  const selectedCampaign = campaigns.data?.find((campaign) => campaign.id === campaignId);
+
+  const avatars = useQuery({
+    queryKey: ["config", "avatars", selectedCampaign?.client_id],
+    queryFn: () =>
+      apiClient.get<Avatar[]>(`/content/ui/config/clients/${selectedCampaign?.client_id}/avatars`),
+    enabled: selectedCampaign !== undefined,
   });
 
   const templates = useQuery({
@@ -33,10 +44,14 @@ export function GenerationTemplates() {
           generation_prompt: generationPrompt,
           is_synthetic_media: false,
           aspect_ratio: aspectRatio,
+          avatar_id: avatarId,
+          voice_id: voiceId || null,
         }
       ),
     onSuccess: () => {
       setGenerationPrompt("");
+      setAvatarId(null);
+      setVoiceId("");
       queryClient.invalidateQueries({ queryKey: ["config", "templates", campaignId] });
     },
   });
@@ -105,6 +120,22 @@ export function GenerationTemplates() {
             value={aspectRatio}
             onChange={(event) => setAspectRatio(event.target.value)}
             placeholder="Aspect ratio (ex: 9:16)"
+          />
+          <select
+            value={avatarId ?? ""}
+            onChange={(event) => setAvatarId(Number(event.target.value) || null)}
+          >
+            <option value="">Sem avatar</option>
+            {avatars.data?.map((avatar) => (
+              <option key={avatar.id} value={avatar.id}>
+                {avatar.name}
+              </option>
+            ))}
+          </select>
+          <input
+            value={voiceId}
+            onChange={(event) => setVoiceId(event.target.value)}
+            placeholder="Voice ID (opcional)"
           />
           <button type="submit" disabled={create.isPending || campaignId === null}>
             Criar template
