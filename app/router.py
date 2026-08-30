@@ -24,6 +24,7 @@ from app.controllers.v1.content import (
     social_accounts,
     tenants,
     ui,
+    ui_config,
 )
 
 root_api_router = APIRouter()
@@ -46,3 +47,4 @@ root_api_router.include_router(providers.router)
 root_api_router.include_router(publications.router)
 root_api_router.include_router(models.router)
 root_api_router.include_router(ui.router)
+root_api_router.include_router(ui_config.router)

@@ -79,6 +79,7 @@ class ContentClient(SQLModel, table=True):
     tenant_id: int = Field(foreign_key="content_tenants.id", index=True)
     name: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    is_active: bool = Field(default=True)
 
 
 class ContentSocialAccount(SQLModel, table=True):
@@ -234,7 +235,12 @@ class ClientRead(BaseModel):
     id: int
     tenant_id: int
     name: str
+    is_active: bool
     created_at: datetime
+
+
+class ClientUpdate(BaseModel):
+    name: Optional[str] = None
 
 
 class SocialAccountCreate(BaseModel):
