@@ -203,6 +203,7 @@ class ContentAuditLog(SQLModel, table=True):
     entity_id: int
     action: str
     actor: str
+    details: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
