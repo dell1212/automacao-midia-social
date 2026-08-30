@@ -300,6 +300,12 @@ class ApprovalRuleRead(BaseModel):
     created_at: datetime
 
 
+class ApprovalRuleUpdate(BaseModel):
+    condition: Optional[dict] = None
+    action: Optional[ApprovalAction] = None
+    priority: Optional[int] = None
+
+
 class GenerationTemplateCreate(BaseModel):
     campaign_id: int
     type: ContentPieceType

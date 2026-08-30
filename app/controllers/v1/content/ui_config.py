@@ -7,6 +7,9 @@ from app.controllers import content_auth
 from app.controllers.v1.base import new_router
 from app.db import get_session
 from app.models.content import (
+    ApprovalRuleCreate,
+    ApprovalRuleRead,
+    ApprovalRuleUpdate,
     CampaignCreate,
     CampaignRead,
     CampaignUpdate,
@@ -18,6 +21,7 @@ from app.models.content import (
     SocialAccountUpdate,
 )
 from app.models.content_generation import AvatarCreate, AvatarRead, AvatarUpdate
+from app.services.content import approval_rules as approval_rules_service
 from app.services.content import audit
 from app.services.content import avatars as avatars_service
 from app.services.content import campaigns as campaigns_service
@@ -438,3 +442,110 @@ def deactivate_avatar(
         actor=f"user:{user_session.user_id}",
     )
     return avatar
+
+
+@router.get(
+    "/content/ui/config/campaigns/{campaign_id}/approval-rules",
+    response_model=list[ApprovalRuleRead],
+)
+def list_approval_rules(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    return approval_rules_service.list_approval_rules(
+        session, tenant_id=user_session.tenant.id, campaign_id=campaign_id
+    )
+
+
+@router.get("/content/ui/config/approval-rules/{rule_id}", response_model=ApprovalRuleRead)
+def get_approval_rule(
+    rule_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    rule = approval_rules_service.get_approval_rule(
+        session, tenant_id=user_session.tenant.id, rule_id=rule_id
+    )
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Approval rule not found")
+    return rule
+
+
+@router.post("/content/ui/config/approval-rules", response_model=ApprovalRuleRead, status_code=201)
+def create_approval_rule(
+    payload: ApprovalRuleCreate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    rule = approval_rules_service.create_approval_rule(
+        session,
+        tenant_id=user_session.tenant.id,
+        campaign_id=payload.campaign_id,
+        condition=payload.condition,
+        action=payload.action,
+        priority=payload.priority,
+    )
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="approval_rule",
+        entity_id=rule.id,
+        action="created",
+        actor=f"user:{user_session.user_id}",
+    )
+    return rule
+
+
+@router.put("/content/ui/config/approval-rules/{rule_id}", response_model=ApprovalRuleRead)
+def update_approval_rule(
+    rule_id: int,
+    payload: ApprovalRuleUpdate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    rule = approval_rules_service.update_approval_rule(
+        session,
+        tenant_id=user_session.tenant.id,
+        rule_id=rule_id,
+        condition=payload.condition,
+        action=payload.action,
+        priority=payload.priority,
+    )
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Approval rule not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="approval_rule",
+        entity_id=rule.id,
+        action="updated",
+        actor=f"user:{user_session.user_id}",
+    )
+    return rule
+
+
+@router.delete("/content/ui/config/approval-rules/{rule_id}", status_code=204)
+def delete_approval_rule(
+    rule_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    deleted = approval_rules_service.delete_approval_rule(
+        session, tenant_id=user_session.tenant.id, rule_id=rule_id
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Approval rule not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="approval_rule",
+        entity_id=rule_id,
+        action="deleted",
+        actor=f"user:{user_session.user_id}",
+    )
