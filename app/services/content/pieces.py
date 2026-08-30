@@ -143,12 +143,12 @@ def create_piece(session: Session, *, tenant_id: int, payload) -> tuple[ContentP
 def _conditional_transition(
     session: Session, *, piece_id: int, values: dict
 ) -> bool:
-    """UPDATE guardado: só aplica se a piece ainda estiver pending_approval.
+    """Guarded UPDATE: only applies if the piece is still pending_approval.
 
-    Fecha a corrida entre uma decisão automática (approval_action, Passe 2 do
-    scheduler) e uma ação manual do humano chegando ao mesmo tempo — quem
-    escrever primeiro vence, o outro descarta sem sobrescrever. Retorna se a
-    escrita realmente aconteceu.
+    Closes the race between an automatic decision (approval_action, scheduler
+    Pass 2) and a manual human action arriving at the same time — whichever
+    writes first wins, the other discards without overwriting. Returns
+    whether the write actually happened.
     """
     result = session.exec(
         update(ContentPiece)
@@ -226,11 +226,11 @@ def _status_reset_for_edit(piece: ContentPiece) -> tuple[dict, dict]:
 
 
 def _conditional_edit(session: Session, *, piece_id: int, values: dict) -> bool:
-    """UPDATE guardado: só aplica se a piece não estiver posted.
+    """Guarded UPDATE: only applies if the piece isn't posted.
 
-    Mesmo princípio de _conditional_transition, mas a guarda é 'não postada'
-    em vez de 'pending_approval' — edição manual é permitida em qualquer
-    status anterior a posted.
+    Same principle as _conditional_transition, but the guard is 'not posted'
+    instead of 'pending_approval' — manual editing is allowed in any status
+    before posted.
     """
     result = session.exec(
         update(ContentPiece)

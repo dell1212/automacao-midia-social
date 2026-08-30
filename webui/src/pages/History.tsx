@@ -18,7 +18,7 @@ const ENTITY_TYPES = [
 
 const PAGE_SIZE = 50;
 
-export function History() {
+export function HistoryPage() {
   const [entityType, setEntityType] = useState("");
   const [offset, setOffset] = useState(0);
 
@@ -54,6 +54,11 @@ export function History() {
       {feed.data && <AuditLogList entries={feed.data} />}
 
       <div>
+        {feed.data && (
+          <span>
+            Exibindo {feed.data.length === 0 ? 0 : offset + 1}–{offset + feed.data.length}
+          </span>
+        )}
         <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
           Anterior
         </button>

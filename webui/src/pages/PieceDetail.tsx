@@ -68,6 +68,12 @@ export function PieceDetail() {
     mutationFn: (payload: PieceUpdatePayload) =>
       apiClient.patch(`/content/ui/pieces/${id}`, payload),
     onSuccess: () => {
+      setGenerationPrompt("");
+      setRiskLevel("");
+      setContentCategory("");
+      setAvatarId("");
+      setVoiceId("");
+      setScheduledFor("");
       queryClient.invalidateQueries({ queryKey: ["piece", id] });
       queryClient.invalidateQueries({ queryKey: ["pieces"] });
       queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
@@ -196,6 +202,7 @@ export function PieceDetail() {
           <button type="submit" disabled={!canEdit || edit.isPending}>
             Salvar edição
           </button>
+          {edit.isError && <p>Erro ao salvar edição.</p>}
         </form>
         <form
           onSubmit={(event) => {
@@ -210,6 +217,7 @@ export function PieceDetail() {
           <button type="submit" disabled={!canEdit || !assetFile || replaceAsset.isPending}>
             Substituir asset
           </button>
+          {replaceAsset.isError && <p>Erro ao substituir asset.</p>}
         </form>
         {piece.status === "posted" && <p>Peça publicada — não pode mais ser editada.</p>}
       </RequireRole>
