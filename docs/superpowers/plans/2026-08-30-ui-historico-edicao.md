@@ -430,7 +430,7 @@ git commit -m "feat(content): add GET /content/ui/audit-log"
 
 ---
 
-### Task 3: `pieces_service.update_piece`
+### Task 3: `pieces_service.update_piece` and `mark_asset_replaced`
 
 **Files:**
 - Modify: `app/services/content/pieces.py`
@@ -438,6 +438,7 @@ git commit -m "feat(content): add GET /content/ui/audit-log"
 
 **Interfaces:**
 - Produces: `pieces_service.update_piece(session, *, tenant_id, piece_id, generation_prompt=None, avatar_id=None, voice_id=None, content_category=None, risk_level=None, scheduled_for=None) -> Optional[tuple[ContentPiece, dict]]`. Returns `None` when the piece doesn't exist or is/became `posted`. Otherwise `(updated_piece, diff)` where `diff` is `{field: {"before": ..., "after": ...}}`, including a `"status"` entry when `approved`/`rejected` was reverted to `pending_approval`.
+- Produces: `pieces_service.mark_asset_replaced(session, *, tenant_id, piece_id) -> Optional[tuple[ContentPiece, dict]]` — same `None`/`posted` semantics as `update_piece`, but never changes a `ContentPiece` field directly (Task 6's route uses it for the asset-replace endpoint's status-only side effect). `diff` is `{}` unless the piece was `approved`/`rejected`, in which case it's just the `"status"` entry.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -562,12 +563,76 @@ class TestUpdatePiece(unittest.TestCase):
         ).upper()
         self.assertIn("STATUS != 'POSTED'", compiled)
         self.assertIn("ID = 10", compiled)
+
+
+class TestMarkAssetReplaced(unittest.TestCase):
+    def test_returns_none_when_piece_not_found(self):
+        session = MagicMock()
+
+        with patch.object(pieces_service, "get_piece", return_value=None):
+            result = pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=99)
+
+        self.assertIsNone(result)
+
+    def test_no_diff_when_piece_not_in_decided_state(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.draft)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=10)
+
+        self.assertIsNotNone(result)
+        updated, diff = result
+        self.assertIs(updated, piece)
+        self.assertEqual(diff, {})
+
+    def test_reverts_approved_to_pending_approval_and_logs_it(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.approved)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=10)
+
+        updated, diff = result
+        self.assertEqual(
+            diff["status"], {"before": "approved", "after": "pending_approval"}
+        )
+
+    def test_returns_none_when_posted_concurrently(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.pending_approval)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 0
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=10)
+
+        self.assertIsNone(result)
+        session.refresh.assert_not_called()
+
+    def test_where_clause_excludes_posted(self):
+        piece = MagicMock(id=10, status=ContentPieceStatus.draft)
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            pieces_service.mark_asset_replaced(session, tenant_id=1, piece_id=10)
+
+        statement = session.exec.call_args.args[0]
+        compiled = str(
+            statement.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        ).upper()
+        self.assertIn("STATUS != 'POSTED'", compiled)
+        self.assertIn("ID = 10", compiled)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 -m pytest test/services/test_content_pieces.py -v -k UpdatePiece`
-Expected: FAIL — `update_piece` doesn't exist.
+Run: `python3 -m pytest test/services/test_content_pieces.py -v -k "UpdatePiece or MarkAssetReplaced"`
+Expected: FAIL — `update_piece` and `mark_asset_replaced` don't exist.
 
 - [ ] **Step 3: Implement**
 
@@ -703,12 +768,17 @@ def mark_asset_replaced(
     return piece, diff
 ```
 
-Note: `mark_asset_replaced` is implemented here too (Task 5 only writes its tests) since it shares `_status_reset_for_edit`/`_conditional_edit` with `update_piece` — keeping both in one place avoids defining `_conditional_edit` twice.
+Note: `mark_asset_replaced` is implemented and tested here too (not in Task 5,
+which only touches `assets.py`) since it shares `_status_reset_for_edit`/
+`_conditional_edit` with `update_piece` — keeping both in one place avoids
+defining `_conditional_edit` twice. Task 6 later consumes it (mocked, for the
+route-level test) — its own behavior is covered by `TestMarkAssetReplaced`
+above.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m pytest test/services/test_content_pieces.py -v -k UpdatePiece`
-Expected: PASS (5 tests).
+Run: `python3 -m pytest test/services/test_content_pieces.py -v -k "UpdatePiece or MarkAssetReplaced"`
+Expected: PASS (10 tests: 5 for `update_piece`, 5 for `mark_asset_replaced`).
 
 - [ ] **Step 5: Commit**
 
