@@ -129,10 +129,18 @@ async def protect_generated_task_files(request: Request, call_next):
 # Configures the CORS middleware for the FastAPI app
 cors_allowed_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "")
 origins = cors_allowed_origins_str.split(",") if cors_allowed_origins_str else ["*"]
+# Credentials are only granted to an explicitly configured origin list. With
+# the "*" fallback, Starlette echoes back whatever Origin it is handed, so
+# pairing it with allow_credentials told every site on the internet that it
+# may make credentialed calls here and read the responses. Nothing in this
+# app authenticates by cookie — the content UI sends a bearer token in the
+# Authorization header, which needs no credentials mode — so dropping it in
+# the wildcard case costs nothing.
+allow_credentials = origins != ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

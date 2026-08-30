@@ -32,6 +32,16 @@ export function PieceQueue() {
     enabled: activeCampaignId !== null,
   });
 
+  // Without a campaign the pieces query stays disabled, so neither its loading
+  // nor its error state ever renders — these two cases would otherwise be an
+  // empty screen with no explanation.
+  if (campaigns.isError) {
+    return <p>Erro ao carregar campanhas. Recarregue a página.</p>;
+  }
+  if (campaigns.data?.length === 0) {
+    return <p>Nenhuma campanha cadastrada — crie uma em Configuração.</p>;
+  }
+
   return (
     <div>
       <select
