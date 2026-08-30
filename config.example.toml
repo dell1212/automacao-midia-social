@@ -489,22 +489,34 @@ open_task_folder_on_completion = true
 # subtitle_background_color = "#000000"
 # rounded_subtitle_background = false
 
+# Content module — foundation (sub-project 1). These are secrets and must be
+# set as environment variables, never here:
+#   DATABASE_URL=postgresql://...                       # required, Postgres connection string
+#   CONTENT_MODULE_ENCRYPTION_KEY=<Fernet key>           # required to store/read provider & social account credentials
+#                                                         # generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#   CONTENT_ADMIN_TOKEN=<random string>                  # required for tenant-provisioning endpoints (fails closed if unset)
+
 # Content module — Supabase Storage for generated artifacts.
 # These are secrets and must be set as environment variables, never here:
 #   SUPABASE_URL=https://<project-ref>.supabase.co
 #   SUPABASE_SERVICE_ROLE_KEY=<service role key>
 #   CONTENT_STORAGE_BUCKET=content-assets   # optional, defaults to content-assets
 
-# Content module — social publishing (sub-project 3).
-# These are secrets and must be set as environment variables, never here:
+# Content module — generation engine (sub-project 2) thread pool/backlog
+# tuning. Not secrets, but also not read from this file — set as environment
+# variables if you need to override the defaults:
+#   CONTENT_FAST_WORKERS=4          # optional, thread pool size for image/voice jobs
+#   CONTENT_VIDEO_WORKERS=2         # optional, separate thread pool size for video jobs (they poll for minutes)
+#   CONTENT_MAX_PENDING_PIECES=20   # optional, backlog cap enforced by a bounded semaphore
+
+# Content module — social publishing (sub-project 3) tuning. Not secrets:
 #   CONTENT_PUBLISH_WORKERS=4                       # optional, shared thread pool size
 #   CONTENT_PUBLISH_PLATFORM_CONCURRENCY=2           # optional, per-platform semaphore limit (process-local)
 #   CONTENT_PUBLISH_DISPATCH_INTERVAL_SECONDS=2      # optional, dispatcher poll interval
 #   CONTENT_PUBLISH_DISPATCH_BATCH_SIZE=4            # optional, defaults to CONTENT_PUBLISH_WORKERS
 #   CONTENT_PUBLISH_STALE_RUNNING_SECONDS=1800       # optional, reclaim window for rows stuck in running
 
-# Content module — automation and approval (sub-project 4).
-# These are secrets and must be set as environment variables, never here:
+# Content module — automation and approval (sub-project 4) tuning. Not secrets:
 #   CONTENT_AUTOMATION_TICK_SECONDS=300          # optional, scheduler poll interval
 #   CONTENT_AUTOMATION_BATCH_SIZE=50              # optional, campaigns/pieces processed per tick per pass
 

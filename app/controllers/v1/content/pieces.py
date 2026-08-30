@@ -73,9 +73,7 @@ def create_piece(
                 detail=f"no active {kind.value} provider configured for this tenant",
             )
 
-    piece, created = pieces_service.create_piece(
-        session, tenant_id=tenant.id, payload=payload
-    )
+    piece, created = pieces_service.create_piece(session, payload=payload)
     if not created:
         # Idempotent replay: the piece already exists and its generation was
         # already paid for. Return it as-is instead of generating again.

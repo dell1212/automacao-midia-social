@@ -136,7 +136,6 @@ class TestFillCampaignCalendars(unittest.TestCase):
 
         create_piece.assert_called_once()
         _, kwargs = create_piece.call_args
-        self.assertEqual(kwargs["tenant_id"], 1)
         payload = kwargs["payload"]
         self.assertEqual(payload.campaign_id, 1)
         self.assertEqual(payload.type, ContentPieceType.image)

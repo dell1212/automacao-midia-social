@@ -125,9 +125,7 @@ class TestCreatePieceIdempotency(unittest.TestCase):
             pieces_service, "find_by_idempotency_key", return_value=existing
         ):
             with patch.object(pieces_service, "schedule_piece") as schedule:
-                result, created = pieces_service.create_piece(
-                    session, tenant_id=1, payload=_payload()
-                )
+                result, created = pieces_service.create_piece(session, payload=_payload())
 
         self.assertIs(result, existing)
         self.assertFalse(created)
@@ -139,9 +137,7 @@ class TestCreatePieceIdempotency(unittest.TestCase):
 
         with patch.object(pieces_service, "find_by_idempotency_key", return_value=None):
             with patch.object(pieces_service, "schedule_piece") as schedule:
-                result, created = pieces_service.create_piece(
-                    session, tenant_id=1, payload=_payload()
-                )
+                result, created = pieces_service.create_piece(session, payload=_payload())
 
         self.assertTrue(created)
         session.add.assert_called_once()
@@ -156,7 +152,6 @@ class TestCreatePiecePolicy(unittest.TestCase):
             with patch.object(pieces_service, "schedule_piece"):
                 piece, _ = pieces_service.create_piece(
                     session,
-                    tenant_id=1,
                     payload=_payload(content_category=ContentCategory.medical),
                 )
 
@@ -169,9 +164,7 @@ class TestCreatePiecePolicy(unittest.TestCase):
 
         with patch.object(pieces_service, "find_by_idempotency_key", return_value=None):
             with patch.object(pieces_service, "schedule_piece"):
-                piece, _ = pieces_service.create_piece(
-                    session, tenant_id=1, payload=_payload()
-                )
+                piece, _ = pieces_service.create_piece(session, payload=_payload())
 
         self.assertEqual(piece.risk_level, RiskLevel.none)
         self.assertFalse(piece.requires_human_review)

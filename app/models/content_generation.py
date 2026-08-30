@@ -57,6 +57,7 @@ class ContentGenerationProvider(SQLModel, table=True):
     )
     credentials_encrypted: str
     config: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    # Lower wins: capability.py sorts providers ascending, so 0 is tried before 1.
     priority: int = Field(default=0)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -149,6 +150,7 @@ class GenerationProviderCreate(BaseModel):
     provider: GenerationProviderName
     credentials: str
     config: dict = {}
+    # Lower wins — this provider is tried before one with a higher number.
     priority: int = 0
 
 
@@ -166,6 +168,7 @@ class GenerationProviderRead(BaseModel):
 class GenerationProviderUpdate(BaseModel):
     credentials: Optional[str] = None
     config: Optional[dict] = None
+    # Lower wins — this provider is tried before one with a higher number.
     priority: Optional[int] = None
 
 

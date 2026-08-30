@@ -131,9 +131,7 @@ def _fill_campaign_calendars(session: Session, *, batch_limit: int) -> None:
                 duration=template.duration,
             )
             try:
-                piece, created = pieces_service.create_piece(
-                    session, tenant_id=tenant.id, payload=piece_create
-                )
+                piece, created = pieces_service.create_piece(session, payload=piece_create)
             except IntegrityError:
                 # Outra réplica já criou a piece para este campaign_id + slot
                 # (mesma UniqueConstraint que resolve_publication_request usa na

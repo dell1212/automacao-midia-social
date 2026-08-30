@@ -79,7 +79,7 @@ def required_kinds_for(payload) -> List[GenerationKind]:
     return kinds
 
 
-def create_piece(session: Session, *, tenant_id: int, payload) -> tuple[ContentPiece, bool]:
+def create_piece(session: Session, *, payload) -> tuple[ContentPiece, bool]:
     """Create a piece and kick off its generation.
 
     Returns (piece, created). `created` is False when the idempotency key
