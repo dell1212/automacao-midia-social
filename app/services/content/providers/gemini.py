@@ -10,6 +10,7 @@ from app.services.content.providers.base import (
     DEFAULT_POLL_INTERVAL_SECONDS,
     DEFAULT_SUBMIT_TIMEOUT,
     GeneratedAsset,
+    download_asset,
     raise_for_response,
     wrap_request_exception,
 )
@@ -20,6 +21,21 @@ _MAX_POLL_SECONDS = 900.0
 
 def _headers(api_key: str) -> dict:
     return {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+
+
+def _inline_image_data(source_image_url: str) -> dict:
+    """Gemini's REST API takes reference images as inline base64 bytes, not a
+    URL — every image this module can produce is a Supabase HTTPS URL (or an
+    avatar's reference_image_url), never a gs:// URI, so gcsUri is not an
+    option here.
+    """
+    asset = download_asset(
+        source_image_url, provider="gemini", filename="source.bin", mime_type="image/png"
+    )
+    return {
+        "mimeType": asset.mime_type,
+        "data": base64.b64encode(asset.data).decode("ascii"),
+    }
 
 
 def _post(api_key: str, path: str, payload: dict) -> dict:
@@ -47,7 +63,10 @@ def generate_image(
     poll_timeout: Optional[float] = None,
     **extra: Any,
 ) -> GeneratedAsset:
-    parts: list[dict] = [{"text": prompt}]
+    parts: list[dict] = []
+    if source_image_url:
+        parts.append({"inlineData": _inline_image_data(source_image_url)})
+    parts.append({"text": prompt})
     payload = {
         "contents": [{"parts": parts}],
         "generationConfig": {"responseModalities": ["IMAGE"]},
@@ -94,7 +113,11 @@ def generate_video(
 ) -> GeneratedAsset:
     instance: dict = {"prompt": prompt}
     if source_image_url:
-        instance["image"] = {"gcsUri": source_image_url}
+        image_data = _inline_image_data(source_image_url)
+        instance["image"] = {
+            "bytesBase64Encoded": image_data["data"],
+            "mimeType": image_data["mimeType"],
+        }
 
     parameters: dict = {}
     if aspect_ratio:
