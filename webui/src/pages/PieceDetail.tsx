@@ -4,7 +4,8 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiClient, ApiError } from "../lib/apiClient";
 import { useSession } from "../context/SessionProvider";
 import { RequireRole } from "../components/RequireRole";
-import type { PieceDetail as PieceDetailType, PieceUpdatePayload } from "../lib/types";
+import { AuditLogList } from "../components/AuditLogList";
+import type { AuditLogEntry, PieceDetail as PieceDetailType, PieceUpdatePayload } from "../lib/types";
 
 export function PieceDetail() {
   const { id } = useParams<{ id: string }>();
@@ -19,6 +20,14 @@ export function PieceDetail() {
   const detail = useQuery({
     queryKey: ["piece", id],
     queryFn: () => apiClient.get<PieceDetailType>(`/content/ui/pieces/${id}`),
+  });
+
+  const history = useQuery({
+    queryKey: ["audit-log", "content_piece", id],
+    queryFn: () =>
+      apiClient.get<AuditLogEntry[]>(
+        `/content/ui/audit-log?entity_type=content_piece&entity_id=${id}`
+      ),
   });
 
   const decide = useMutation({
@@ -159,6 +168,10 @@ export function PieceDetail() {
           </li>
         ))}
       </ul>
+
+      <h2>Histórico</h2>
+      {history.isLoading && <p>Carregando histórico...</p>}
+      {history.data && <AuditLogList entries={history.data} />}
     </div>
   );
 }
