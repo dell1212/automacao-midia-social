@@ -7,7 +7,7 @@ from app.controllers import content_auth
 from app.controllers.v1.base import new_router
 from app.db import get_session
 from app.models.content import ContentPieceRead, ContentPieceStatus
-from app.models.content_ui import PieceDetailRead, UserSessionRead
+from app.models.content_ui import AuditLogEntryRead, PieceDetailRead, UserSessionRead
 from app.services.content import audit
 from app.services.content import pieces as pieces_service
 from app.services.content import ui_pieces as ui_pieces_service
@@ -123,3 +123,22 @@ def reject_piece(
         actor=f"user:{user_session.user_id}",
     )
     return updated
+
+
+@router.get("/content/ui/audit-log", response_model=list[AuditLogEntryRead])
+def list_audit_log(
+    entity_type: Optional[str] = None,
+    entity_id: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    return audit.list_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        limit=limit,
+        offset=offset,
+    )

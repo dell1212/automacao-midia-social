@@ -25,6 +25,16 @@ class PieceAssetRead(BaseModel):
     duration: Optional[float]
 
 
+class AuditLogEntryRead(BaseModel):
+    id: int
+    entity_type: str
+    entity_id: int
+    action: str
+    actor: str
+    details: Optional[dict]
+    created_at: datetime
+
+
 class PieceDetailRead(BaseModel):
     id: int
     campaign_id: int
