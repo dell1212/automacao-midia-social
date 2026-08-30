@@ -328,6 +328,30 @@ class TestUpdatePiece(unittest.TestCase):
             diff["generation_prompt"], {"before": "a cat", "after": "a dog"}
         )
 
+    def test_no_op_edit_on_approved_piece_does_not_revert_status(self):
+        piece = MagicMock(
+            id=10,
+            status=ContentPieceStatus.approved,
+            generation_prompt="a cat",
+            avatar_id=None,
+            voice_id=None,
+            content_category=None,
+            risk_level=RiskLevel.none,
+            scheduled_for=None,
+        )
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.update_piece(
+                session, tenant_id=1, piece_id=10
+            )
+
+        self.assertIsNotNone(result)
+        updated, diff = result
+        self.assertEqual(diff, {})
+        self.assertEqual(updated.status, ContentPieceStatus.approved)
+
     def test_returns_none_when_posted_concurrently(self):
         piece = MagicMock(
             id=10,

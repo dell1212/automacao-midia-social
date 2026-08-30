@@ -251,6 +251,39 @@ class TestReplaceAssetRouteAsAdmin(UITestCase):
             )
         self.assertEqual(response.status_code, 409)
 
+    def test_posted_concurrently_after_upload_is_409_and_does_not_mutate_assets(self):
+        piece = _piece(type=ContentPieceType.image)
+        campaign = MagicMock(client_id=2)
+        uploaded = UploadedObject(
+            url="https://x/1/10/new.png", storage_path="1/10/new.png", size_bytes=10
+        )
+
+        with patch(
+            "app.services.content.pieces.get_piece", return_value=piece
+        ), patch(
+            "app.services.content.campaigns.get_campaign", return_value=campaign
+        ), patch(
+            "app.services.content.storage.upload_bytes", return_value=uploaded
+        ), patch(
+            "app.services.content.assets.archive_assets_of_type"
+        ) as mock_archive, patch(
+            "app.services.content.assets.create_manual_asset"
+        ) as mock_create, patch(
+            "app.services.content.pieces.mark_asset_replaced", return_value=None
+        ), patch(
+            "app.services.content.audit.write_audit_log"
+        ) as mock_log:
+            response = self.client.post(
+                "/api/v1/content/ui/pieces/10/asset",
+                data={"type": "image"},
+                files={"file": ("photo.png", b"binarydata", "image/png")},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        mock_archive.assert_not_called()
+        mock_create.assert_not_called()
+        mock_log.assert_not_called()
+
     def test_type_mismatch_is_422(self):
         piece = _piece(type=ContentPieceType.image)
         with patch("app.services.content.pieces.get_piece", return_value=piece):

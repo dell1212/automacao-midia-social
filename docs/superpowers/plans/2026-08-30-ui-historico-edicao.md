@@ -112,7 +112,11 @@ class TestListAuditLog(unittest.TestCase):
             )
         ).upper()
         self.assertIn("TENANT_ID = 1", compiled)
-        self.assertNotIn("ENTITY_TYPE", compiled)
+        # Not "NOT IN ... ENTITY_TYPE" — select(ContentAuditLog) always lists
+        # every column, entity_type included, so the bare column name is
+        # always present in the compiled SQL. What must be absent is a
+        # filter on it.
+        self.assertNotIn("ENTITY_TYPE = ", compiled)
 
 
 if __name__ == "__main__":

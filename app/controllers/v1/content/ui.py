@@ -222,6 +222,15 @@ async def replace_piece_asset(
         content_type=file.content_type or "application/octet-stream",
     )
 
+    result = pieces_service.mark_asset_replaced(
+        session, tenant_id=user_session.tenant.id, piece_id=piece_id
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=409, detail="Piece became 'posted' before the asset was replaced"
+        )
+    updated, diff = result
+
     archived = assets_service.archive_assets_of_type(
         session, content_piece_id=piece_id, asset_type=type
     )
@@ -234,15 +243,6 @@ async def replace_piece_asset(
         uploaded=uploaded,
         mime_type=file.content_type,
     )
-
-    result = pieces_service.mark_asset_replaced(
-        session, tenant_id=user_session.tenant.id, piece_id=piece_id
-    )
-    if result is None:
-        raise HTTPException(
-            status_code=409, detail="Piece became 'posted' before the asset was replaced"
-        )
-    updated, diff = result
 
     diff["asset"] = {
         "before": archived[0].storage_path if archived else None,

@@ -281,7 +281,7 @@ def update_piece(
             }
             values[field] = new_value
 
-    reset_values, reset_diff = _status_reset_for_edit(piece)
+    reset_values, reset_diff = ({}, {}) if not diff else _status_reset_for_edit(piece)
     values.update(reset_values)
     diff.update(reset_diff)
 
