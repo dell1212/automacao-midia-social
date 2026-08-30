@@ -9,6 +9,7 @@ import { Campaigns } from "./pages/config/Campaigns";
 import { SocialAccounts } from "./pages/config/SocialAccounts";
 import { Avatars } from "./pages/config/Avatars";
 import { ApprovalRules } from "./pages/config/ApprovalRules";
+import { GenerationTemplates } from "./pages/config/GenerationTemplates";
 
 function Gate({ children }: { children: ReactNode }) {
   const { status } = useSession();
@@ -34,6 +35,7 @@ export function App() {
             <Route path="/config/social-accounts" element={<SocialAccounts />} />
             <Route path="/config/avatars" element={<Avatars />} />
             <Route path="/config/approval-rules" element={<ApprovalRules />} />
+            <Route path="/config/templates" element={<GenerationTemplates />} />
           </Routes>
         </BrowserRouter>
       </Gate>
