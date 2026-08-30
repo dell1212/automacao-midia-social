@@ -8,6 +8,7 @@ import { Clients } from "./pages/config/Clients";
 import { Campaigns } from "./pages/config/Campaigns";
 import { SocialAccounts } from "./pages/config/SocialAccounts";
 import { Avatars } from "./pages/config/Avatars";
+import { ApprovalRules } from "./pages/config/ApprovalRules";
 
 function Gate({ children }: { children: ReactNode }) {
   const { status } = useSession();
@@ -32,6 +33,7 @@ export function App() {
             <Route path="/config/campaigns" element={<Campaigns />} />
             <Route path="/config/social-accounts" element={<SocialAccounts />} />
             <Route path="/config/avatars" element={<Avatars />} />
+            <Route path="/config/approval-rules" element={<ApprovalRules />} />
           </Routes>
         </BrowserRouter>
       </Gate>
