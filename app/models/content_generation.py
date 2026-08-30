@@ -71,6 +71,7 @@ class ContentAvatar(SQLModel, table=True):
     reference_image_url: str
     voice_provider: Optional[str] = None
     voice_id: Optional[str] = None
+    is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -177,7 +178,15 @@ class AvatarRead(BaseModel):
     reference_image_url: str
     voice_provider: Optional[str]
     voice_id: Optional[str]
+    is_active: bool
     created_at: datetime
+
+
+class AvatarUpdate(BaseModel):
+    name: Optional[str] = None
+    reference_image_url: Optional[str] = None
+    voice_provider: Optional[str] = None
+    voice_id: Optional[str] = None
 
 
 class GenerationJobRead(BaseModel):

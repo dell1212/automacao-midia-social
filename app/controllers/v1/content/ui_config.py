@@ -17,7 +17,9 @@ from app.models.content import (
     SocialAccountRead,
     SocialAccountUpdate,
 )
+from app.models.content_generation import AvatarCreate, AvatarRead, AvatarUpdate
 from app.services.content import audit
+from app.services.content import avatars as avatars_service
 from app.services.content import campaigns as campaigns_service
 from app.services.content import clients as clients_service
 from app.services.content import social_accounts as social_accounts_service
@@ -329,3 +331,110 @@ def revoke_social_account(
         actor=f"user:{user_session.user_id}",
     )
     return account
+
+
+@router.get("/content/ui/config/clients/{client_id}/avatars", response_model=list[AvatarRead])
+def list_avatars(
+    client_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    return avatars_service.list_avatars(
+        session, tenant_id=user_session.tenant.id, client_id=client_id
+    )
+
+
+@router.get("/content/ui/config/avatars/{avatar_id}", response_model=AvatarRead)
+def get_avatar(
+    avatar_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    avatar = avatars_service.get_avatar(
+        session, tenant_id=user_session.tenant.id, avatar_id=avatar_id
+    )
+    if avatar is None:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    return avatar
+
+
+@router.post("/content/ui/config/avatars", response_model=AvatarRead, status_code=201)
+def create_avatar(
+    payload: AvatarCreate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    avatar = avatars_service.create_avatar(
+        session,
+        tenant_id=user_session.tenant.id,
+        client_id=payload.client_id,
+        name=payload.name,
+        reference_image_url=payload.reference_image_url,
+        voice_provider=payload.voice_provider,
+        voice_id=payload.voice_id,
+    )
+    if avatar is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="avatar",
+        entity_id=avatar.id,
+        action="created",
+        actor=f"user:{user_session.user_id}",
+    )
+    return avatar
+
+
+@router.put("/content/ui/config/avatars/{avatar_id}", response_model=AvatarRead)
+def update_avatar(
+    avatar_id: int,
+    payload: AvatarUpdate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    avatar = avatars_service.update_avatar(
+        session,
+        tenant_id=user_session.tenant.id,
+        avatar_id=avatar_id,
+        name=payload.name,
+        reference_image_url=payload.reference_image_url,
+        voice_provider=payload.voice_provider,
+        voice_id=payload.voice_id,
+    )
+    if avatar is None:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="avatar",
+        entity_id=avatar.id,
+        action="updated",
+        actor=f"user:{user_session.user_id}",
+    )
+    return avatar
+
+
+@router.delete("/content/ui/config/avatars/{avatar_id}", response_model=AvatarRead)
+def deactivate_avatar(
+    avatar_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    avatar = avatars_service.deactivate_avatar(
+        session, tenant_id=user_session.tenant.id, avatar_id=avatar_id
+    )
+    if avatar is None:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="avatar",
+        entity_id=avatar.id,
+        action="deactivated",
+        actor=f"user:{user_session.user_id}",
+    )
+    return avatar

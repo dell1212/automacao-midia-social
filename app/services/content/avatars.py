@@ -53,3 +53,43 @@ def get_avatar(
         .join(ContentClient, ContentClient.id == ContentAvatar.client_id)
         .where(ContentAvatar.id == avatar_id, ContentClient.tenant_id == tenant_id)
     ).first()
+
+
+def update_avatar(
+    session: Session,
+    *,
+    tenant_id: int,
+    avatar_id: int,
+    name: Optional[str] = None,
+    reference_image_url: Optional[str] = None,
+    voice_provider: Optional[str] = None,
+    voice_id: Optional[str] = None,
+) -> Optional[ContentAvatar]:
+    avatar = get_avatar(session, tenant_id=tenant_id, avatar_id=avatar_id)
+    if avatar is None:
+        return None
+    if name is not None:
+        avatar.name = name
+    if reference_image_url is not None:
+        avatar.reference_image_url = reference_image_url
+    if voice_provider is not None:
+        avatar.voice_provider = voice_provider
+    if voice_id is not None:
+        avatar.voice_id = voice_id
+    session.add(avatar)
+    session.commit()
+    session.refresh(avatar)
+    return avatar
+
+
+def deactivate_avatar(
+    session: Session, *, tenant_id: int, avatar_id: int
+) -> Optional[ContentAvatar]:
+    avatar = get_avatar(session, tenant_id=tenant_id, avatar_id=avatar_id)
+    if avatar is None:
+        return None
+    avatar.is_active = False
+    session.add(avatar)
+    session.commit()
+    session.refresh(avatar)
+    return avatar
