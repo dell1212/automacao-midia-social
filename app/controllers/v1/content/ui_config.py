@@ -23,14 +23,25 @@ from app.models.content import (
     SocialAccountRead,
     SocialAccountUpdate,
 )
-from app.models.content_generation import AvatarCreate, AvatarRead, AvatarUpdate
+from app.models.content_generation import (
+    AvatarCreate,
+    AvatarRead,
+    AvatarUpdate,
+    GenerationKind,
+    GenerationProviderCreate,
+    GenerationProviderRead,
+    GenerationProviderUpdate,
+)
 from app.services.content import approval_rules as approval_rules_service
 from app.services.content import audit
 from app.services.content import avatars as avatars_service
 from app.services.content import campaigns as campaigns_service
 from app.services.content import clients as clients_service
+from app.services.content import generation_providers as providers_service
 from app.services.content import generation_templates as templates_service
+from app.services.content import providers as provider_adapters
 from app.services.content import social_accounts as social_accounts_service
+from app.services.content.errors import GenerationError, is_retryable
 
 router = new_router(dependencies=[Depends(content_auth.verify_user_session)])
 
@@ -679,3 +690,116 @@ def deactivate_template(
         actor=f"user:{user_session.user_id}",
     )
     return template
+
+
+@router.get("/content/ui/config/providers", response_model=list[GenerationProviderRead])
+def list_providers(
+    kind: Optional[GenerationKind] = None,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    return providers_service.list_generation_providers(
+        session, tenant_id=user_session.tenant.id, kind=kind
+    )
+
+
+@router.post("/content/ui/config/providers", response_model=GenerationProviderRead, status_code=201)
+def create_provider(
+    payload: GenerationProviderCreate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    try:
+        provider_adapters.validate_credentials(
+            provider=payload.provider.value, api_key=payload.credentials
+        )
+    except GenerationError as error:
+        if is_retryable(error.code):
+            raise HTTPException(status_code=503, detail=error.message)
+        raise HTTPException(status_code=422, detail=error.message)
+
+    row = providers_service.create_generation_provider(
+        session,
+        tenant_id=user_session.tenant.id,
+        kind=payload.kind,
+        provider=payload.provider,
+        credentials=payload.credentials,
+        config=payload.config,
+        priority=payload.priority,
+    )
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="generation_provider",
+        entity_id=row.id,
+        action="created",
+        actor=f"user:{user_session.user_id}",
+    )
+    return row
+
+
+@router.put("/content/ui/config/providers/{provider_id}", response_model=GenerationProviderRead)
+def update_provider(
+    provider_id: int,
+    payload: GenerationProviderUpdate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    existing = providers_service.get_generation_provider(
+        session, tenant_id=user_session.tenant.id, provider_id=provider_id
+    )
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Generation provider not found")
+
+    if payload.credentials is not None:
+        try:
+            provider_adapters.validate_credentials(
+                provider=existing.provider.value, api_key=payload.credentials
+            )
+        except GenerationError as error:
+            if is_retryable(error.code):
+                raise HTTPException(status_code=503, detail=error.message)
+            raise HTTPException(status_code=422, detail=error.message)
+
+    row = providers_service.update_generation_provider(
+        session,
+        tenant_id=user_session.tenant.id,
+        provider_id=provider_id,
+        credentials=payload.credentials,
+        config=payload.config,
+        priority=payload.priority,
+    )
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="generation_provider",
+        entity_id=row.id,
+        action="updated",
+        actor=f"user:{user_session.user_id}",
+    )
+    return row
+
+
+@router.delete("/content/ui/config/providers/{provider_id}", response_model=GenerationProviderRead)
+def deactivate_provider(
+    provider_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    row = providers_service.deactivate_generation_provider(
+        session, tenant_id=user_session.tenant.id, provider_id=provider_id
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Generation provider not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="generation_provider",
+        entity_id=row.id,
+        action="deactivated",
+        actor=f"user:{user_session.user_id}",
+    )
+    return row

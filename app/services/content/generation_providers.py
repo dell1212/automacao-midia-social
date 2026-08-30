@@ -88,3 +88,27 @@ def has_active_provider(
 
 def decrypt_provider_credentials(row: ContentGenerationProvider) -> str:
     return decrypt_credentials(row.credentials_encrypted)
+
+
+def update_generation_provider(
+    session: Session,
+    *,
+    tenant_id: int,
+    provider_id: int,
+    credentials: Optional[str] = None,
+    config: Optional[dict] = None,
+    priority: Optional[int] = None,
+) -> Optional[ContentGenerationProvider]:
+    row = get_generation_provider(session, tenant_id=tenant_id, provider_id=provider_id)
+    if row is None:
+        return None
+    if credentials is not None:
+        row.credentials_encrypted = encrypt_credentials(credentials)
+    if config is not None:
+        row.config = config
+    if priority is not None:
+        row.priority = priority
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row

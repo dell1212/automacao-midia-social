@@ -163,6 +163,12 @@ class GenerationProviderRead(BaseModel):
     created_at: datetime
 
 
+class GenerationProviderUpdate(BaseModel):
+    credentials: Optional[str] = None
+    config: Optional[dict] = None
+    priority: Optional[int] = None
+
+
 class AvatarCreate(BaseModel):
     client_id: int
     name: str
