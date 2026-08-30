@@ -36,9 +36,17 @@ def publish_piece(
             status_code=409,
             detail=f"Piece must be approved or already posted, got '{piece.status.value}'",
         )
+    if not payload.social_account_ids:
+        raise HTTPException(status_code=422, detail="social_account_ids must not be empty")
+
+    # A duplicate id would otherwise appear twice in `accepted` — the second
+    # pass finds the row the first pass just committed and re-appends it,
+    # since resolve_publication_request's per-pair lookup is (correctly)
+    # idempotent. Deduping here keeps the response one entry per account.
+    social_account_ids = list(dict.fromkeys(payload.social_account_ids))
 
     accepted, rejected = publications_service.resolve_publication_request(
-        session, piece=piece, social_account_ids=payload.social_account_ids
+        session, piece=piece, social_account_ids=social_account_ids
     )
 
     # Only an accepted account actually queues a publication — a request that

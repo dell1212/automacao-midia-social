@@ -141,6 +141,9 @@ def resolve_publication_request(
             existing.next_run_at = None
             existing.publication_cycle += 1
             existing.updated_at = datetime.utcnow()
+            # Otherwise a retry after the piece's prompt was edited keeps
+            # showing what the FIRST attempt requested, not this one.
+            existing.request_payload = {"generation_prompt": piece.generation_prompt}
             session.add(existing)
             session.commit()
             session.refresh(existing)

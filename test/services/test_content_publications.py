@@ -199,6 +199,9 @@ class TestResolvePublicationRequest(unittest.TestCase):
         self.assertIsNone(existing.error_message)
         self.assertIsNone(existing.next_run_at)
         self.assertEqual(existing.publication_cycle, 2)
+        self.assertEqual(
+            existing.request_payload, {"generation_prompt": piece.generation_prompt}
+        )
 
     def test_succeeded_pair_is_a_no_op(self):
         existing = MagicMock(status=PublicationStatus.succeeded)
@@ -286,6 +289,33 @@ class TestPublishRouteAuditLog(unittest.TestCase):
 
         self.assertEqual(response.status_code, 202)
         mock_log.assert_not_called()
+
+    def test_empty_social_account_ids_is_422(self):
+        piece = _piece(status=ContentPieceStatus.approved)
+
+        with patch("app.services.content.pieces.get_piece", return_value=piece):
+            response = self.client.post(
+                "/api/v1/content/pieces/10/publish", json={"social_account_ids": []}
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_duplicate_social_account_ids_are_deduped_before_resolving(self):
+        piece = _piece(status=ContentPieceStatus.approved)
+
+        with patch(
+            "app.services.content.pieces.get_piece", return_value=piece
+        ), patch(
+            "app.services.content.publications.resolve_publication_request",
+            return_value=([], []),
+        ) as resolve:
+            response = self.client.post(
+                "/api/v1/content/pieces/10/publish",
+                json={"social_account_ids": [5, 5, 6, 5]},
+            )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(resolve.call_args.kwargs["social_account_ids"], [5, 6])
 
 
 if __name__ == "__main__":
