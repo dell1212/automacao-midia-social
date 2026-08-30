@@ -5,7 +5,13 @@ import { apiClient, ApiError } from "../lib/apiClient";
 import { useSession } from "../context/SessionProvider";
 import { RequireRole } from "../components/RequireRole";
 import { AuditLogList } from "../components/AuditLogList";
-import type { AuditLogEntry, PieceDetail as PieceDetailType, PieceUpdatePayload } from "../lib/types";
+import type {
+  Avatar,
+  AuditLogEntry,
+  Campaign,
+  PieceDetail as PieceDetailType,
+  PieceUpdatePayload,
+} from "../lib/types";
 
 export function PieceDetail() {
   const { id } = useParams<{ id: string }>();
@@ -15,11 +21,28 @@ export function PieceDetail() {
   const [generationPrompt, setGenerationPrompt] = useState("");
   const [riskLevel, setRiskLevel] = useState("");
   const [contentCategory, setContentCategory] = useState("");
+  const [avatarId, setAvatarId] = useState("");
+  const [voiceId, setVoiceId] = useState("");
+  const [scheduledFor, setScheduledFor] = useState("");
   const [assetFile, setAssetFile] = useState<File | null>(null);
 
   const detail = useQuery({
     queryKey: ["piece", id],
     queryFn: () => apiClient.get<PieceDetailType>(`/content/ui/pieces/${id}`),
+  });
+
+  const campaignId = detail.data?.campaign_id;
+  const campaign = useQuery({
+    queryKey: ["campaign", campaignId],
+    queryFn: () => apiClient.get<Campaign>(`/content/ui/config/campaigns/${campaignId}`),
+    enabled: campaignId !== undefined,
+  });
+
+  const clientId = campaign.data?.client_id;
+  const avatars = useQuery({
+    queryKey: ["config", "avatars", clientId],
+    queryFn: () => apiClient.get<Avatar[]>(`/content/ui/config/clients/${clientId}/avatars`),
+    enabled: clientId !== undefined,
   });
 
   const history = useQuery({
@@ -119,6 +142,9 @@ export function PieceDetail() {
               generation_prompt: generationPrompt || undefined,
               risk_level: riskLevel || undefined,
               content_category: contentCategory || undefined,
+              avatar_id: avatarId ? Number(avatarId) : undefined,
+              voice_id: voiceId || undefined,
+              scheduled_for: scheduledFor ? new Date(scheduledFor).toISOString() : undefined,
             });
           }}
         >
@@ -138,6 +164,24 @@ export function PieceDetail() {
             value={contentCategory}
             onChange={(event) => setContentCategory(event.target.value)}
             placeholder="Nova categoria (opcional)"
+          />
+          <select value={avatarId} onChange={(event) => setAvatarId(event.target.value)}>
+            <option value="">Manter avatar atual</option>
+            {avatars.data?.map((avatar) => (
+              <option key={avatar.id} value={avatar.id}>
+                {avatar.name}
+              </option>
+            ))}
+          </select>
+          <input
+            value={voiceId}
+            onChange={(event) => setVoiceId(event.target.value)}
+            placeholder="Novo voice_id (opcional)"
+          />
+          <input
+            type="datetime-local"
+            value={scheduledFor}
+            onChange={(event) => setScheduledFor(event.target.value)}
           />
           <button type="submit" disabled={!canEdit || edit.isPending}>
             Salvar edição
