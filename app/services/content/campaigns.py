@@ -48,3 +48,37 @@ def list_campaigns_for_tenant(session: Session, *, tenant_id: int) -> List[Conte
             .where(ContentClient.tenant_id == tenant_id)
         ).all()
     )
+
+
+def update_campaign(
+    session: Session,
+    *,
+    tenant_id: int,
+    campaign_id: int,
+    name: Optional[str] = None,
+    horizon_days: Optional[int] = None,
+) -> Optional[ContentCampaign]:
+    campaign = get_campaign(session, tenant_id=tenant_id, campaign_id=campaign_id)
+    if campaign is None:
+        return None
+    if name is not None:
+        campaign.name = name
+    if horizon_days is not None:
+        campaign.horizon_days = horizon_days
+    session.add(campaign)
+    session.commit()
+    session.refresh(campaign)
+    return campaign
+
+
+def archive_campaign(
+    session: Session, *, tenant_id: int, campaign_id: int
+) -> Optional[ContentCampaign]:
+    campaign = get_campaign(session, tenant_id=tenant_id, campaign_id=campaign_id)
+    if campaign is None:
+        return None
+    campaign.status = "archived"
+    session.add(campaign)
+    session.commit()
+    session.refresh(campaign)
+    return campaign

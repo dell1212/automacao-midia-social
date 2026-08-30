@@ -274,6 +274,11 @@ class CampaignRead(BaseModel):
     created_at: datetime
 
 
+class CampaignUpdate(BaseModel):
+    name: Optional[str] = None
+    horizon_days: Optional[int] = None
+
+
 class ApprovalRuleCreate(BaseModel):
     campaign_id: int
     condition: dict
