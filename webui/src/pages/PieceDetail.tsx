@@ -60,6 +60,7 @@ export function PieceDetail() {
       queryClient.invalidateQueries({ queryKey: ["piece", id] });
       queryClient.invalidateQueries({ queryKey: ["pieces"] });
       queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
+      queryClient.invalidateQueries({ queryKey: ["audit-log", "feed"] });
     },
   });
 
@@ -70,6 +71,7 @@ export function PieceDetail() {
       queryClient.invalidateQueries({ queryKey: ["piece", id] });
       queryClient.invalidateQueries({ queryKey: ["pieces"] });
       queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
+      queryClient.invalidateQueries({ queryKey: ["audit-log", "feed"] });
     },
   });
 
@@ -85,6 +87,7 @@ export function PieceDetail() {
       queryClient.invalidateQueries({ queryKey: ["piece", id] });
       queryClient.invalidateQueries({ queryKey: ["pieces"] });
       queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
+      queryClient.invalidateQueries({ queryKey: ["audit-log", "feed"] });
     },
   });
 

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import Depends, File, Form, HTTPException, UploadFile
+from fastapi import Depends, File, Form, HTTPException, Query, UploadFile
 from sqlmodel import Session
 
 from app.controllers import content_auth
@@ -264,7 +264,7 @@ async def replace_piece_asset(
 def list_audit_log(
     entity_type: Optional[str] = None,
     entity_id: Optional[int] = None,
-    limit: int = 50,
+    limit: int = Query(50, le=200),
     offset: int = 0,
     session: Session = Depends(get_session),
     user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
