@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiClient, ApiError } from "../../lib/apiClient";
+import { apiClient, apiErrorStatus } from "../../lib/apiClient";
 import { RequireRole } from "../../components/RequireRole";
 import type { Client, ClientPayload } from "../../lib/types";
 
@@ -27,7 +27,7 @@ export function Clients() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["config", "clients"] }),
   });
 
-  const forbidden = create.error instanceof ApiError && create.error.status === 403;
+  const forbidden = apiErrorStatus(create.error) === 403;
 
   return (
     <div>

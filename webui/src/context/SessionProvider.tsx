@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { apiClient, setToken } from "../lib/apiClient";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiClient, onUnauthorized, setToken } from "../lib/apiClient";
 
 interface UserSessionRead {
   tenant_id: number;
@@ -25,6 +26,23 @@ const WAIT_TIMEOUT_MS = 15000;
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>("waiting");
   const [session, setSession] = useState<UserSessionRead | null>(null);
+  const queryClient = useQueryClient();
+
+  // Separate from the handshake effect below: this must register even when
+  // the handshake bails out early (no VITE_PARENT_ORIGIN), and a 401 from any
+  // page's query or mutation — not just the handshake's own session fetch —
+  // has to reach here. apiClient has already dropped the dead token by the
+  // time this fires.
+  useEffect(() => {
+    return onUnauthorized(() => {
+      setSession(null);
+      setStatus("error");
+      // The QueryClient outlives this remount (it's created above <App/>), so
+      // without this a token later issued for a different user in the same
+      // tab would still show the previous tenant's cached lists.
+      queryClient.clear();
+    });
+  }, [queryClient]);
 
   useEffect(() => {
     if (!PARENT_ORIGIN) {
@@ -49,6 +67,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setSession(result);
         setStatus("ready");
       } catch {
+        // A network error or 5xx here is not a 401, so onUnauthorized never
+        // fires — but the token is just as dead, so drop it the same way.
+        setToken(null);
         setStatus("error");
       }
     }

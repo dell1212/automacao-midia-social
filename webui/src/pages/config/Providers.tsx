@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiClient, ApiError } from "../../lib/apiClient";
+import { apiClient, apiErrorStatus } from "../../lib/apiClient";
 import { RequireRole } from "../../components/RequireRole";
 import type { Provider, ProviderCreatePayload } from "../../lib/types";
 
@@ -38,7 +38,7 @@ export function Providers() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["config", "providers"] }),
   });
 
-  const invalidCredentials = create.error instanceof ApiError && create.error.status === 422;
+  const invalidCredentials = apiErrorStatus(create.error) === 422;
 
   return (
     <div>

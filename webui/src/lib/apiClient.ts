@@ -7,24 +7,49 @@ export class ApiError extends Error {
   }
 }
 
+// True for exactly the ApiError.status values apiClient can throw with a 401
+// or 409, so callers can branch without importing ApiError themselves.
+export function apiErrorStatus(error: unknown): number | null {
+  return error instanceof ApiError ? error.status : null;
+}
+
 let currentToken: string | null = null;
 
 export function setToken(token: string | null): void {
   currentToken = token;
 }
 
+// Every request funnels through here, so this is the one place a 401 can be
+// observed for the whole SPA — including the session handshake itself, the
+// only apiClient caller outside React Query. Subscribers are notified once
+// per dead token: the sentToken check below means a straggler response from
+// a token that has already been replaced can't fire this and wipe out a
+// session that is otherwise fine.
+const unauthorizedHandlers = new Set<() => void>();
+
+export function onUnauthorized(handler: () => void): () => void {
+  unauthorizedHandlers.add(handler);
+  return () => unauthorizedHandlers.delete(handler);
+}
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
+  const sentToken = currentToken;
   const response = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       ...(init?.headers ?? {}),
-      ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
+      ...(sentToken ? { Authorization: `Bearer ${sentToken}` } : {}),
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
     },
   });
+
+  if (response.status === 401 && sentToken !== null && sentToken === currentToken) {
+    currentToken = null;
+    unauthorizedHandlers.forEach((handler) => handler());
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }));

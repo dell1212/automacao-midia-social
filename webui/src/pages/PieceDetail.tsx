@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { apiClient, ApiError } from "../lib/apiClient";
+import { apiClient, apiErrorStatus } from "../lib/apiClient";
 import { useSession } from "../context/SessionProvider";
 import { RequireRole } from "../components/RequireRole";
 import { AuditLogList } from "../components/AuditLogList";
+import { ErrorText } from "../components/ErrorText";
 import type {
   Avatar,
   AuditLogEntry,
@@ -25,6 +26,16 @@ export function PieceDetail() {
   const [voiceId, setVoiceId] = useState("");
   const [scheduledFor, setScheduledFor] = useState("");
   const [assetFile, setAssetFile] = useState<File | null>(null);
+
+  // A 409 here means someone else changed the piece's status first (posted
+  // it, decided it) — the on-screen status/buttons are now stale, not just
+  // the mutation. Refetch instead of leaving the user free to retry an
+  // action that can no longer succeed.
+  const invalidateOnConflict = (error: unknown) => {
+    if (apiErrorStatus(error) !== 409) return;
+    queryClient.invalidateQueries({ queryKey: ["piece", id] });
+    queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
+  };
 
   const detail = useQuery({
     queryKey: ["piece", id],
@@ -62,6 +73,7 @@ export function PieceDetail() {
       queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
       queryClient.invalidateQueries({ queryKey: ["audit-log", "feed"] });
     },
+    onError: invalidateOnConflict,
   });
 
   const edit = useMutation({
@@ -79,6 +91,7 @@ export function PieceDetail() {
       queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
       queryClient.invalidateQueries({ queryKey: ["audit-log", "feed"] });
     },
+    onError: invalidateOnConflict,
   });
 
   const replaceAsset = useMutation({
@@ -95,6 +108,7 @@ export function PieceDetail() {
       queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
       queryClient.invalidateQueries({ queryKey: ["audit-log", "feed"] });
     },
+    onError: invalidateOnConflict,
   });
 
   if (detail.isLoading) return <p>Carregando...</p>;
@@ -104,7 +118,6 @@ export function PieceDetail() {
   const piece = detail.data;
   const canDecide = canApprove() && piece.status === "pending_approval";
   const canEdit = canApprove() && piece.status !== "posted";
-  const conflict = decide.error instanceof ApiError && decide.error.status === 409;
 
   return (
     <div>
@@ -149,7 +162,11 @@ export function PieceDetail() {
         >
           Rejeitar
         </button>
-        {conflict && <p>Esta peça já foi decidida por outra pessoa.</p>}
+        <ErrorText
+          error={decide.error}
+          fallback="Erro ao decidir esta peça."
+          conflict="Esta peça já foi decidida por outra pessoa."
+        />
       </div>
 
       <RequireRole role="admin" fallback={null}>
@@ -212,7 +229,11 @@ export function PieceDetail() {
           <button type="submit" disabled={!canEdit || edit.isPending}>
             Salvar edição
           </button>
-          {edit.isError && <p>Erro ao salvar edição.</p>}
+          <ErrorText
+            error={edit.error}
+            fallback="Erro ao salvar edição."
+            conflict="Esta peça foi publicada por outra pessoa — não pode mais ser editada."
+          />
         </form>
         <form
           onSubmit={(event) => {
@@ -227,7 +248,11 @@ export function PieceDetail() {
           <button type="submit" disabled={!canEdit || !assetFile || replaceAsset.isPending}>
             Substituir asset
           </button>
-          {replaceAsset.isError && <p>Erro ao substituir asset.</p>}
+          <ErrorText
+            error={replaceAsset.error}
+            fallback="Erro ao substituir asset."
+            conflict="Esta peça foi publicada por outra pessoa — o asset não pode mais ser substituído."
+          />
         </form>
         {piece.status === "posted" && <p>Peça publicada — não pode mais ser editada.</p>}
       </RequireRole>
