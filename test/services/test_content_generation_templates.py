@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.models.content import ContentPieceType
+from app.models.content import ContentGenerationTemplate, ContentPieceType
 from app.services.content import generation_templates as templates_service
 
 
@@ -75,3 +75,62 @@ class TestListTemplates(unittest.TestCase):
             result = templates_service.list_templates(session, tenant_id=1, campaign_id=5)
 
         self.assertEqual(result, rows)
+
+
+class TestGetTemplate(unittest.TestCase):
+    def test_returns_template_when_campaign_belongs_to_tenant(self):
+        template = ContentGenerationTemplate(
+            id=1, campaign_id=1, type=ContentPieceType.image, is_active=True,
+        )
+        session = MagicMock()
+        session.exec.return_value.first.return_value = template
+
+        with patch.object(templates_service, "get_campaign", return_value=MagicMock(id=1)):
+            result = templates_service.get_template(session, tenant_id=1, template_id=1)
+
+        self.assertIs(result, template)
+
+    def test_returns_none_when_campaign_belongs_to_other_tenant(self):
+        template = ContentGenerationTemplate(
+            id=1, campaign_id=1, type=ContentPieceType.image, is_active=True,
+        )
+        session = MagicMock()
+        session.exec.return_value.first.return_value = template
+
+        with patch.object(templates_service, "get_campaign", return_value=None):
+            result = templates_service.get_template(session, tenant_id=2, template_id=1)
+
+        self.assertIsNone(result)
+
+
+class TestUpdateTemplate(unittest.TestCase):
+    def test_updates_provided_fields(self):
+        template = ContentGenerationTemplate(
+            id=1, campaign_id=1, type=ContentPieceType.image, generation_prompt="old",
+            aspect_ratio="9:16", is_active=True,
+        )
+        session = MagicMock()
+        session.exec.return_value.first.return_value = template
+
+        with patch.object(templates_service, "get_campaign", return_value=MagicMock(id=1)):
+            result = templates_service.update_template(
+                session, tenant_id=1, template_id=1, generation_prompt="new", aspect_ratio="1:1",
+            )
+
+        self.assertEqual(result.generation_prompt, "new")
+        self.assertEqual(result.aspect_ratio, "1:1")
+        session.commit.assert_called_once()
+
+
+class TestDeactivateTemplate(unittest.TestCase):
+    def test_sets_is_active_false(self):
+        template = ContentGenerationTemplate(
+            id=1, campaign_id=1, type=ContentPieceType.image, is_active=True,
+        )
+        session = MagicMock()
+        session.exec.return_value.first.return_value = template
+
+        with patch.object(templates_service, "get_campaign", return_value=MagicMock(id=1)):
+            result = templates_service.deactivate_template(session, tenant_id=1, template_id=1)
+
+        self.assertFalse(result.is_active)

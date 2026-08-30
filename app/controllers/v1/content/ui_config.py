@@ -16,6 +16,9 @@ from app.models.content import (
     ClientCreate,
     ClientRead,
     ClientUpdate,
+    GenerationTemplateCreate,
+    GenerationTemplateRead,
+    GenerationTemplateUpdate,
     SocialAccountCreate,
     SocialAccountRead,
     SocialAccountUpdate,
@@ -26,6 +29,7 @@ from app.services.content import audit
 from app.services.content import avatars as avatars_service
 from app.services.content import campaigns as campaigns_service
 from app.services.content import clients as clients_service
+from app.services.content import generation_templates as templates_service
 from app.services.content import social_accounts as social_accounts_service
 
 router = new_router(dependencies=[Depends(content_auth.verify_user_session)])
@@ -549,3 +553,129 @@ def delete_approval_rule(
         action="deleted",
         actor=f"user:{user_session.user_id}",
     )
+
+
+@router.get(
+    "/content/ui/config/campaigns/{campaign_id}/templates",
+    response_model=list[GenerationTemplateRead],
+)
+def list_templates(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    return templates_service.list_templates(
+        session, tenant_id=user_session.tenant.id, campaign_id=campaign_id
+    )
+
+
+@router.get("/content/ui/config/templates/{template_id}", response_model=GenerationTemplateRead)
+def get_template(
+    template_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    template = templates_service.get_template(
+        session, tenant_id=user_session.tenant.id, template_id=template_id
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Generation template not found")
+    return template
+
+
+@router.post(
+    "/content/ui/config/campaigns/{campaign_id}/templates",
+    response_model=GenerationTemplateRead,
+    status_code=201,
+)
+def create_template(
+    campaign_id: int,
+    payload: GenerationTemplateCreate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    if campaign_id != payload.campaign_id:
+        raise HTTPException(status_code=422, detail="campaign_id in path and body must match")
+    template = templates_service.create_template(
+        session,
+        tenant_id=user_session.tenant.id,
+        campaign_id=payload.campaign_id,
+        type=payload.type,
+        generation_prompt=payload.generation_prompt,
+        avatar_id=payload.avatar_id,
+        voice_id=payload.voice_id,
+        is_synthetic_media=payload.is_synthetic_media,
+        content_category=payload.content_category,
+        aspect_ratio=payload.aspect_ratio,
+        resolution=payload.resolution,
+        duration=payload.duration,
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="generation_template",
+        entity_id=template.id,
+        action="created",
+        actor=f"user:{user_session.user_id}",
+    )
+    return template
+
+
+@router.put("/content/ui/config/templates/{template_id}", response_model=GenerationTemplateRead)
+def update_template(
+    template_id: int,
+    payload: GenerationTemplateUpdate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    template = templates_service.update_template(
+        session,
+        tenant_id=user_session.tenant.id,
+        template_id=template_id,
+        generation_prompt=payload.generation_prompt,
+        avatar_id=payload.avatar_id,
+        voice_id=payload.voice_id,
+        is_synthetic_media=payload.is_synthetic_media,
+        content_category=payload.content_category,
+        aspect_ratio=payload.aspect_ratio,
+        resolution=payload.resolution,
+        duration=payload.duration,
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Generation template not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="generation_template",
+        entity_id=template.id,
+        action="updated",
+        actor=f"user:{user_session.user_id}",
+    )
+    return template
+
+
+@router.delete("/content/ui/config/templates/{template_id}", response_model=GenerationTemplateRead)
+def deactivate_template(
+    template_id: int,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+    template = templates_service.deactivate_template(
+        session, tenant_id=user_session.tenant.id, template_id=template_id
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Generation template not found")
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="generation_template",
+        entity_id=template.id,
+        action="deactivated",
+        actor=f"user:{user_session.user_id}",
+    )
+    return template

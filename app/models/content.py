@@ -191,6 +191,7 @@ class ContentGenerationTemplate(SQLModel, table=True):
     resolution: Optional[str] = None
     duration: Optional[int] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    is_active: bool = Field(default=True)
 
 
 class ContentAuditLog(SQLModel, table=True):
@@ -332,6 +333,18 @@ class GenerationTemplateRead(BaseModel):
     resolution: Optional[str]
     duration: Optional[int]
     created_at: datetime
+    is_active: bool
+
+
+class GenerationTemplateUpdate(BaseModel):
+    generation_prompt: Optional[str] = None
+    avatar_id: Optional[int] = None
+    voice_id: Optional[str] = None
+    is_synthetic_media: Optional[bool] = None
+    content_category: Optional[ContentCategory] = None
+    aspect_ratio: Optional[str] = None
+    resolution: Optional[str] = None
+    duration: Optional[int] = None
 
 
 class ContentPieceCreate(BaseModel):

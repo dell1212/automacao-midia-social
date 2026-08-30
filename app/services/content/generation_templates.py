@@ -56,3 +56,68 @@ def list_templates(
             .order_by(ContentGenerationTemplate.id)
         ).all()
     )
+
+
+def get_template(
+    session: Session, *, tenant_id: int, template_id: int
+) -> Optional[ContentGenerationTemplate]:
+    template = session.exec(
+        select(ContentGenerationTemplate).where(ContentGenerationTemplate.id == template_id)
+    ).first()
+    if template is None:
+        return None
+    if get_campaign(session, tenant_id=tenant_id, campaign_id=template.campaign_id) is None:
+        return None
+    return template
+
+
+def update_template(
+    session: Session,
+    *,
+    tenant_id: int,
+    template_id: int,
+    generation_prompt: Optional[str] = None,
+    avatar_id: Optional[int] = None,
+    voice_id: Optional[str] = None,
+    is_synthetic_media: Optional[bool] = None,
+    content_category: Optional[ContentCategory] = None,
+    aspect_ratio: Optional[str] = None,
+    resolution: Optional[str] = None,
+    duration: Optional[int] = None,
+) -> Optional[ContentGenerationTemplate]:
+    template = get_template(session, tenant_id=tenant_id, template_id=template_id)
+    if template is None:
+        return None
+    if generation_prompt is not None:
+        template.generation_prompt = generation_prompt
+    if avatar_id is not None:
+        template.avatar_id = avatar_id
+    if voice_id is not None:
+        template.voice_id = voice_id
+    if is_synthetic_media is not None:
+        template.is_synthetic_media = is_synthetic_media
+    if content_category is not None:
+        template.content_category = content_category
+    if aspect_ratio is not None:
+        template.aspect_ratio = aspect_ratio
+    if resolution is not None:
+        template.resolution = resolution
+    if duration is not None:
+        template.duration = duration
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+    return template
+
+
+def deactivate_template(
+    session: Session, *, tenant_id: int, template_id: int
+) -> Optional[ContentGenerationTemplate]:
+    template = get_template(session, tenant_id=tenant_id, template_id=template_id)
+    if template is None:
+        return None
+    template.is_active = False
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+    return template
