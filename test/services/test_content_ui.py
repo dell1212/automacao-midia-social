@@ -213,5 +213,132 @@ class TestUpdatePieceRouteAsAdmin(UITestCase):
         mock_log.assert_not_called()
 
 
+from app.models.content_generation import ContentAssetType
+from app.services.content.storage import UploadedObject
+
+
+class TestReplaceAssetRoute(UITestCase):
+    role = "member"
+
+    def test_member_gets_403(self):
+        response = self.client.post(
+            "/api/v1/content/ui/pieces/10/asset",
+            data={"type": "image"},
+            files={"file": ("photo.png", b"binarydata", "image/png")},
+        )
+        self.assertEqual(response.status_code, 403)
+
+
+class TestReplaceAssetRouteAsAdmin(UITestCase):
+    role = "admin"
+
+    def test_not_found_is_404(self):
+        with patch("app.services.content.pieces.get_piece", return_value=None):
+            response = self.client.post(
+                "/api/v1/content/ui/pieces/999/asset",
+                data={"type": "image"},
+                files={"file": ("photo.png", b"binarydata", "image/png")},
+            )
+        self.assertEqual(response.status_code, 404)
+
+    def test_posted_piece_is_409(self):
+        piece = _piece(status=ContentPieceStatus.posted)
+        with patch("app.services.content.pieces.get_piece", return_value=piece):
+            response = self.client.post(
+                "/api/v1/content/ui/pieces/10/asset",
+                data={"type": "image"},
+                files={"file": ("photo.png", b"binarydata", "image/png")},
+            )
+        self.assertEqual(response.status_code, 409)
+
+    def test_type_mismatch_is_422(self):
+        piece = _piece(type=ContentPieceType.image)
+        with patch("app.services.content.pieces.get_piece", return_value=piece):
+            response = self.client.post(
+                "/api/v1/content/ui/pieces/10/asset",
+                data={"type": "video"},
+                files={"file": ("clip.mp4", b"binarydata", "video/mp4")},
+            )
+        self.assertEqual(response.status_code, 422)
+
+    def test_successful_replace_archives_old_asset_and_logs_it(self):
+        piece = _piece(type=ContentPieceType.image)
+        old_asset = MagicMock(storage_path="1/10/old.png")
+        new_asset = MagicMock(storage_path="1/10/new.png")
+        campaign = MagicMock(client_id=2)
+        updated = _piece(type=ContentPieceType.image)
+        uploaded = UploadedObject(
+            url="https://x/1/10/new.png", storage_path="1/10/new.png", size_bytes=10
+        )
+
+        with patch(
+            "app.services.content.pieces.get_piece", return_value=piece
+        ), patch(
+            "app.services.content.campaigns.get_campaign", return_value=campaign
+        ), patch(
+            "app.services.content.storage.upload_bytes", return_value=uploaded
+        ), patch(
+            "app.services.content.assets.archive_assets_of_type",
+            return_value=[old_asset],
+        ), patch(
+            "app.services.content.assets.create_manual_asset", return_value=new_asset
+        ), patch(
+            "app.services.content.pieces.mark_asset_replaced",
+            return_value=(updated, {}),
+        ), patch(
+            "app.services.content.audit.write_audit_log"
+        ) as mock_log:
+            response = self.client.post(
+                "/api/v1/content/ui/pieces/10/asset",
+                data={"type": "image"},
+                files={"file": ("photo.png", b"binarydata", "image/png")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        mock_log.assert_called_once()
+        self.assertEqual(mock_log.call_args.kwargs["action"], "asset_replaced")
+        self.assertEqual(
+            mock_log.call_args.kwargs["details"]["asset"],
+            {"before": "1/10/old.png", "after": "1/10/new.png"},
+        )
+
+    def test_reverted_status_is_merged_into_the_same_log_entry(self):
+        piece = _piece(type=ContentPieceType.image, status=ContentPieceStatus.approved)
+        campaign = MagicMock(client_id=2)
+        updated = _piece(type=ContentPieceType.image, status=ContentPieceStatus.pending_approval)
+        uploaded = UploadedObject(
+            url="https://x/1/10/new.png", storage_path="1/10/new.png", size_bytes=10
+        )
+        status_diff = {"status": {"before": "approved", "after": "pending_approval"}}
+
+        with patch(
+            "app.services.content.pieces.get_piece", return_value=piece
+        ), patch(
+            "app.services.content.campaigns.get_campaign", return_value=campaign
+        ), patch(
+            "app.services.content.storage.upload_bytes", return_value=uploaded
+        ), patch(
+            "app.services.content.assets.archive_assets_of_type", return_value=[]
+        ), patch(
+            "app.services.content.assets.create_manual_asset",
+            return_value=MagicMock(storage_path="1/10/new.png"),
+        ), patch(
+            "app.services.content.pieces.mark_asset_replaced",
+            return_value=(updated, status_diff),
+        ), patch(
+            "app.services.content.audit.write_audit_log"
+        ) as mock_log:
+            response = self.client.post(
+                "/api/v1/content/ui/pieces/10/asset",
+                data={"type": "image"},
+                files={"file": ("photo.png", b"binarydata", "image/png")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        details = mock_log.call_args.kwargs["details"]
+        self.assertEqual(details["status"], status_diff["status"])
+        self.assertIn("asset", details)
+
+
 if __name__ == "__main__":
     unittest.main()

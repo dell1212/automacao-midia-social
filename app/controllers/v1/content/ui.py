@@ -1,16 +1,20 @@
 from typing import Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
 
 from app.controllers import content_auth
 from app.controllers.v1.base import new_router
 from app.db import get_session
 from app.models.content import ContentPieceRead, ContentPieceStatus, PieceUpdate
+from app.models.content_generation import ContentAssetType
 from app.models.content_ui import AuditLogEntryRead, PieceDetailRead, UserSessionRead
+from app.services.content import assets as assets_service
 from app.services.content import audit
 from app.services.content import avatars as avatars_service
+from app.services.content import campaigns as campaigns_service
 from app.services.content import pieces as pieces_service
+from app.services.content import storage
 from app.services.content import ui_pieces as ui_pieces_service
 
 router = new_router(dependencies=[Depends(content_auth.verify_user_session)])
@@ -176,6 +180,82 @@ def reject_piece(
         entity_id=piece_id,
         action="rejected",
         actor=f"user:{user_session.user_id}",
+    )
+    return updated
+
+
+@router.post("/content/ui/pieces/{piece_id}/asset", response_model=ContentPieceRead)
+async def replace_piece_asset(
+    piece_id: int,
+    type: ContentAssetType = Form(...),
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+
+    piece = pieces_service.get_piece(
+        session, tenant_id=user_session.tenant.id, piece_id=piece_id
+    )
+    if piece is None:
+        raise HTTPException(status_code=404, detail="Content piece not found")
+    if piece.status == ContentPieceStatus.posted:
+        raise HTTPException(
+            status_code=409, detail="Piece must not be 'posted' to replace its asset"
+        )
+    if type.value != piece.type.value:
+        raise HTTPException(
+            status_code=422,
+            detail=f"asset type '{type.value}' does not match piece type '{piece.type.value}'",
+        )
+
+    campaign = campaigns_service.get_campaign(
+        session, tenant_id=user_session.tenant.id, campaign_id=piece.campaign_id
+    )
+
+    data = await file.read()
+    uploaded = storage.upload_bytes(
+        tenant_id=user_session.tenant.id,
+        content_piece_id=piece_id,
+        filename=file.filename or "upload",
+        data=data,
+        content_type=file.content_type or "application/octet-stream",
+    )
+
+    archived = assets_service.archive_assets_of_type(
+        session, content_piece_id=piece_id, asset_type=type
+    )
+    new_asset = assets_service.create_manual_asset(
+        session,
+        tenant_id=user_session.tenant.id,
+        client_id=campaign.client_id,
+        content_piece_id=piece_id,
+        asset_type=type,
+        uploaded=uploaded,
+        mime_type=file.content_type,
+    )
+
+    result = pieces_service.mark_asset_replaced(
+        session, tenant_id=user_session.tenant.id, piece_id=piece_id
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=409, detail="Piece became 'posted' before the asset was replaced"
+        )
+    updated, diff = result
+
+    diff["asset"] = {
+        "before": archived[0].storage_path if archived else None,
+        "after": new_asset.storage_path,
+    }
+    audit.write_audit_log(
+        session,
+        tenant_id=user_session.tenant.id,
+        entity_type="content_piece",
+        entity_id=piece_id,
+        action="asset_replaced",
+        actor=f"user:{user_session.user_id}",
+        details=diff,
     )
     return updated
 
