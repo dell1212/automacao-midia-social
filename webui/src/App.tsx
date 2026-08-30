@@ -11,6 +11,7 @@ import { Avatars } from "./pages/config/Avatars";
 import { ApprovalRules } from "./pages/config/ApprovalRules";
 import { GenerationTemplates } from "./pages/config/GenerationTemplates";
 import { Providers } from "./pages/config/Providers";
+import { History } from "./pages/History";
 
 function Gate({ children }: { children: ReactNode }) {
   const { status } = useSession();
@@ -38,6 +39,7 @@ export function App() {
             <Route path="/config/approval-rules" element={<ApprovalRules />} />
             <Route path="/config/templates" element={<GenerationTemplates />} />
             <Route path="/config/providers" element={<Providers />} />
+            <Route path="/history" element={<History />} />
           </Routes>
         </BrowserRouter>
       </Gate>

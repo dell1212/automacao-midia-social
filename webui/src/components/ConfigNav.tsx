@@ -8,6 +8,7 @@ const LINKS = [
   { to: "/config/approval-rules", label: "Approval Rules" },
   { to: "/config/templates", label: "Templates" },
   { to: "/config/providers", label: "Providers" },
+  { to: "/history", label: "Histórico" },
 ];
 
 export function ConfigNav() {
