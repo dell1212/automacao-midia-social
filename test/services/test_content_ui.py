@@ -212,6 +212,22 @@ class TestUpdatePieceRouteAsAdmin(UITestCase):
         self.assertEqual(response.status_code, 200)
         mock_log.assert_not_called()
 
+    def test_posted_concurrently_after_initial_check_is_409_and_does_not_log(self):
+        piece = _piece()
+        with patch(
+            "app.services.content.pieces.get_piece", return_value=piece
+        ), patch(
+            "app.services.content.pieces.update_piece", return_value=None
+        ), patch(
+            "app.services.content.audit.write_audit_log"
+        ) as mock_log:
+            response = self.client.patch(
+                "/api/v1/content/ui/pieces/10", json={"generation_prompt": "a dog"}
+            )
+
+        self.assertEqual(response.status_code, 409)
+        mock_log.assert_not_called()
+
 
 from app.models.content_generation import ContentAssetType
 from app.services.content.storage import UploadedObject
