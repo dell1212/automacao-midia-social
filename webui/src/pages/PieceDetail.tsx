@@ -163,11 +163,18 @@ export function PieceDetail() {
             <option value="medium">Médio</option>
             <option value="high">Alto</option>
           </select>
-          <input
-            value={contentCategory}
-            onChange={(event) => setContentCategory(event.target.value)}
-            placeholder="Nova categoria (opcional)"
-          />
+          <select value={contentCategory} onChange={(event) => setContentCategory(event.target.value)}>
+            <option value="">Manter categoria atual</option>
+            <option value="medical">Médico</option>
+            <option value="pharmaceutical">Farmacêutico</option>
+            <option value="financial">Financeiro</option>
+            <option value="insurance">Seguros</option>
+            <option value="legal">Jurídico</option>
+            <option value="alcohol">Álcool</option>
+            <option value="gambling">Apostas</option>
+            <option value="political">Político</option>
+            <option value="regulated_product">Produto regulado</option>
+          </select>
           <select value={avatarId} onChange={(event) => setAvatarId(event.target.value)}>
             <option value="">Manter avatar atual</option>
             {avatars.data?.map((avatar) => (
@@ -219,6 +226,7 @@ export function PieceDetail() {
 
       <h2>Histórico</h2>
       {history.isLoading && <p>Carregando histórico...</p>}
+      {history.isError && <p>Erro ao carregar histórico.</p>}
       {history.data && <AuditLogList entries={history.data} />}
     </div>
   );

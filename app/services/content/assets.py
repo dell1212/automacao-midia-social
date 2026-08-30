@@ -70,11 +70,13 @@ def archive_assets_of_type(
     """
     assets = list(
         session.exec(
-            select(ContentAsset).where(
+            select(ContentAsset)
+            .where(
                 ContentAsset.content_piece_id == content_piece_id,
                 ContentAsset.type == asset_type,
                 ContentAsset.is_intermediate == False,  # noqa: E712
             )
+            .order_by(ContentAsset.id)
         ).all()
     )
     for asset in assets:
