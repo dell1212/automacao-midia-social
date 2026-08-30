@@ -5,6 +5,7 @@ import { ConfigNav } from "./components/ConfigNav";
 import { PieceQueue } from "./pages/PieceQueue";
 import { PieceDetail } from "./pages/PieceDetail";
 import { Clients } from "./pages/config/Clients";
+import { Campaigns } from "./pages/config/Campaigns";
 
 function Gate({ children }: { children: ReactNode }) {
   const { status } = useSession();
@@ -26,6 +27,7 @@ export function App() {
             <Route path="/" element={<PieceQueue />} />
             <Route path="/pieces/:id" element={<PieceDetail />} />
             <Route path="/config/clients" element={<Clients />} />
+            <Route path="/config/campaigns" element={<Campaigns />} />
           </Routes>
         </BrowserRouter>
       </Gate>

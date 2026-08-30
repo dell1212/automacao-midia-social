@@ -18,7 +18,7 @@ export function PieceQueue() {
 
   const campaigns = useQuery({
     queryKey: ["campaigns"],
-    queryFn: () => apiClient.get<Campaign[]>("/content/ui/campaigns"),
+    queryFn: () => apiClient.get<Campaign[]>("/content/ui/config/campaigns"),
   });
 
   const activeCampaignId = campaignId ?? campaigns.data?.[0]?.id ?? null;
