@@ -73,7 +73,7 @@ class TestListAuditLog(unittest.TestCase):
             )
         ).upper()
         self.assertIn("TENANT_ID = 1", compiled)
-        self.assertNotIn("ENTITY_TYPE", compiled)
+        self.assertNotIn("ENTITY_TYPE = ", compiled)
 
 
 if __name__ == "__main__":

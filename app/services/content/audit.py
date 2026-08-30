@@ -38,22 +38,9 @@ def list_audit_log(
     limit: int = 50,
     offset: int = 0,
 ) -> List[ContentAuditLog]:
-    # Conditionally include entity_type in SELECT only if filtering by it
+    query = select(ContentAuditLog).where(ContentAuditLog.tenant_id == tenant_id)
     if entity_type is not None:
-        query = select(ContentAuditLog).where(ContentAuditLog.tenant_id == tenant_id)
         query = query.where(ContentAuditLog.entity_type == entity_type)
-    else:
-        # Exclude entity_type from SELECT when not filtering by it
-        query = select(
-            ContentAuditLog.id,
-            ContentAuditLog.tenant_id,
-            ContentAuditLog.entity_id,
-            ContentAuditLog.action,
-            ContentAuditLog.actor,
-            ContentAuditLog.details,
-            ContentAuditLog.created_at,
-        ).where(ContentAuditLog.tenant_id == tenant_id)
-
     if entity_id is not None:
         query = query.where(ContentAuditLog.entity_id == entity_id)
     query = query.order_by(ContentAuditLog.created_at.desc()).limit(limit).offset(offset)
