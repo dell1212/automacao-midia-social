@@ -134,9 +134,15 @@ def approve_piece(
         session, tenant_id=user_session.tenant.id, piece_id=piece_id
     )
     if updated is None:
+        # `piece` is the pre-transition read — a concurrent change is exactly
+        # why this branch was reached, so re-fetch instead of reporting the
+        # status that lost the race.
+        current = pieces_service.get_piece(
+            session, tenant_id=user_session.tenant.id, piece_id=piece_id
+        ) or piece
         raise HTTPException(
             status_code=409,
-            detail=f"Piece must be pending_approval to approve, got '{piece.status.value}'",
+            detail=f"Piece must be pending_approval to approve, got '{current.status.value}'",
         )
 
     audit.write_audit_log(
@@ -168,9 +174,12 @@ def reject_piece(
         session, tenant_id=user_session.tenant.id, piece_id=piece_id
     )
     if updated is None:
+        current = pieces_service.get_piece(
+            session, tenant_id=user_session.tenant.id, piece_id=piece_id
+        ) or piece
         raise HTTPException(
             status_code=409,
-            detail=f"Piece must be pending_approval to reject, got '{piece.status.value}'",
+            detail=f"Piece must be pending_approval to reject, got '{current.status.value}'",
         )
 
     audit.write_audit_log(
