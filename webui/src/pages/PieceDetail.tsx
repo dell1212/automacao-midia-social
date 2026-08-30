@@ -14,6 +14,7 @@ export function PieceDetail() {
   const [generationPrompt, setGenerationPrompt] = useState("");
   const [riskLevel, setRiskLevel] = useState("");
   const [contentCategory, setContentCategory] = useState("");
+  const [assetFile, setAssetFile] = useState<File | null>(null);
 
   const detail = useQuery({
     queryKey: ["piece", id],
@@ -33,6 +34,21 @@ export function PieceDetail() {
     mutationFn: (payload: PieceUpdatePayload) =>
       apiClient.patch(`/content/ui/pieces/${id}`, payload),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["piece", id] });
+      queryClient.invalidateQueries({ queryKey: ["pieces"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
+    },
+  });
+
+  const replaceAsset = useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append("type", piece!.type);
+      formData.append("file", file);
+      return apiClient.uploadFile(`/content/ui/pieces/${id}/asset`, formData);
+    },
+    onSuccess: () => {
+      setAssetFile(null);
       queryClient.invalidateQueries({ queryKey: ["piece", id] });
       queryClient.invalidateQueries({ queryKey: ["pieces"] });
       queryClient.invalidateQueries({ queryKey: ["audit-log", "content_piece", id] });
@@ -115,6 +131,20 @@ export function PieceDetail() {
           />
           <button type="submit" disabled={!canEdit || edit.isPending}>
             Salvar edição
+          </button>
+        </form>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (assetFile) replaceAsset.mutate(assetFile);
+          }}
+        >
+          <input
+            type="file"
+            onChange={(event) => setAssetFile(event.target.files?.[0] ?? null)}
+          />
+          <button type="submit" disabled={!canEdit || !assetFile || replaceAsset.isPending}>
+            Substituir asset
           </button>
         </form>
         {piece.status === "posted" && <p>Peça publicada — não pode mais ser editada.</p>}
