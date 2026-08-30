@@ -259,6 +259,11 @@ class SocialAccountRead(BaseModel):
     created_at: datetime
 
 
+class SocialAccountUpdate(BaseModel):
+    external_account_id: Optional[str] = None
+    credentials: Optional[str] = None
+
+
 class CampaignCreate(BaseModel):
     client_id: int
     name: str
