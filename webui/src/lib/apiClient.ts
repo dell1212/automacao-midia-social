@@ -16,12 +16,13 @@ export function setToken(token: string | null): void {
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const response = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       ...(init?.headers ?? {}),
       ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
     },
   });
 
@@ -46,5 +47,7 @@ export const apiClient = {
   patch: <T>(path: string, body?: unknown): Promise<T> =>
     request<T>(path, { method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string): Promise<T> => request<T>(path, { method: "DELETE" }),
+  uploadFile: <T>(path: string, formData: FormData): Promise<T> =>
+    request<T>(path, { method: "POST", body: formData }),
   setToken,
 };

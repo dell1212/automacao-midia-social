@@ -176,3 +176,22 @@ export interface ProviderUpdatePayload {
   config?: Record<string, unknown>;
   priority?: number;
 }
+
+export interface AuditLogEntry {
+  id: number;
+  entity_type: string;
+  entity_id: number;
+  action: string;
+  actor: string;
+  details: Record<string, { before: unknown; after: unknown }> | null;
+  created_at: string;
+}
+
+export interface PieceUpdatePayload {
+  generation_prompt?: string | null;
+  avatar_id?: number | null;
+  voice_id?: string | null;
+  content_category?: string | null;
+  risk_level?: string | null;
+  scheduled_for?: string | null;
+}
