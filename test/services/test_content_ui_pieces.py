@@ -101,6 +101,33 @@ class TestGetPieceDetail(unittest.TestCase):
         self.assertEqual(result.assets[0].signed_url, "https://signed/file.png")
         mock_sign.assert_called_once_with("1/10/file.png")
 
+    def test_unsignable_asset_is_kept_with_a_null_url_instead_of_failing(self):
+        session = MagicMock()
+        piece = _piece()
+        broken = _asset(storage_path="1/10/broken.png")
+        ok = _asset(storage_path="1/10/ok.png")
+
+        def sign(storage_path):
+            if storage_path == "1/10/broken.png":
+                raise ui_pieces.storage.StorageError("sign rejected")
+            return "https://signed/ok.png"
+
+        with patch.object(ui_pieces.pieces_service, "get_piece", return_value=piece), \
+             patch.object(
+                 ui_pieces.assets_service, "list_assets_for_piece", return_value=[broken, ok]
+             ), \
+             patch.object(
+                 ui_pieces.publications_service, "list_publications_for_piece", return_value=[]
+             ), \
+             patch.object(ui_pieces.storage, "create_signed_url", side_effect=sign):
+            result = ui_pieces.get_piece_detail(session, tenant_id=1, piece_id=10)
+
+        # The broken asset still has to appear — dropping it would let a
+        # reviewer approve the piece without knowing an asset was missing.
+        self.assertEqual(len(result.assets), 2)
+        self.assertIsNone(result.assets[0].signed_url)
+        self.assertEqual(result.assets[1].signed_url, "https://signed/ok.png")
+
     def test_includes_publications(self):
         session = MagicMock()
         piece = _piece()

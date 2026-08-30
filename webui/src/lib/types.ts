@@ -29,7 +29,9 @@ export interface ContentPieceSummary {
 
 export interface PieceAsset {
   type: "image" | "audio" | "video" | "thumbnail" | "subtitle";
-  signed_url: string;
+  // null when the backend could not sign this asset — it is still listed so
+  // the reviewer knows the asset exists and must not decide without it.
+  signed_url: string | null;
   mime_type: string | null;
   width: number | null;
   height: number | null;

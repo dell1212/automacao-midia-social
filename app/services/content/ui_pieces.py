@@ -1,5 +1,6 @@
 from typing import Optional
 
+from loguru import logger
 from sqlmodel import Session
 
 from app.models.content_publishing import PublicationRead
@@ -8,6 +9,18 @@ from app.services.content import assets as assets_service
 from app.services.content import pieces as pieces_service
 from app.services.content import publications as publications_service
 from app.services.content import storage
+
+
+def _sign_or_none(storage_path: str) -> Optional[str]:
+    """One unsignable asset must not take the whole piece down with it — the
+    detail response is what the reviewer needs to decide, and a 500 here left
+    the piece impossible to review at all.
+    """
+    try:
+        return storage.create_signed_url(storage_path)
+    except storage.StorageError:
+        logger.warning(f"failed to sign asset for review UI: {storage_path}")
+        return None
 
 
 def get_piece_detail(
@@ -20,7 +33,7 @@ def get_piece_detail(
     assets = [
         PieceAssetRead(
             type=asset.type,
-            signed_url=storage.create_signed_url(asset.storage_path),
+            signed_url=_sign_or_none(asset.storage_path),
             mime_type=asset.mime_type,
             width=asset.width,
             height=asset.height,

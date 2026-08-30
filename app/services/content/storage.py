@@ -11,6 +11,10 @@ _BUCKET_ENV = "CONTENT_STORAGE_BUCKET"
 _DEFAULT_BUCKET = "content-assets"
 
 _UPLOAD_TIMEOUT = (30, 300)
+# Signing is a metadata call, not a transfer — it has no reason to inherit the
+# upload's 5-minute read budget, which a slow Supabase would otherwise spend
+# once per asset, serially, before the review UI can render a piece.
+_SIGN_TIMEOUT = (5, 15)
 
 
 class StorageError(RuntimeError):
@@ -104,7 +108,7 @@ def create_signed_url(storage_path: str, *, expires_in: int = 600) -> str:
             endpoint,
             json={"expiresIn": expires_in},
             headers={"Authorization": f"Bearer {service_key}"},
-            timeout=_UPLOAD_TIMEOUT,
+            timeout=_SIGN_TIMEOUT,
         )
     except requests.RequestException as exc:
         raise StorageError(f"storage sign request failed for {storage_path}") from exc

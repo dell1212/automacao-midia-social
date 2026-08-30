@@ -18,7 +18,10 @@ class UserSessionRead(BaseModel):
 
 class PieceAssetRead(BaseModel):
     type: ContentAssetType
-    signed_url: str
+    # None when signing this particular asset failed — the asset still has to
+    # appear, or a reviewer would approve a piece without being shown that one
+    # of its assets exists at all.
+    signed_url: Optional[str]
     mime_type: Optional[str]
     width: Optional[int]
     height: Optional[int]

@@ -114,14 +114,24 @@ export function PieceDetail() {
       <p>Categoria: {piece.content_category ?? "—"} · Risco: {piece.risk_level}</p>
       <p>Mídia sintética: {piece.is_synthetic_media ? "sim" : "não"}</p>
 
-      {piece.assets.map((asset) => {
+      {piece.assets.map((asset, index) => {
+        // Keyed by position, not by signed_url: an unsigned asset has none,
+        // and two of them would collide on a null key.
+        const key = `${asset.type}-${index}`;
+        if (asset.signed_url === null) {
+          return (
+            <p key={key}>
+              Asset ({asset.type}) não pôde ser carregado — decida somente após visualizá-lo.
+            </p>
+          );
+        }
         if (asset.type === "video") {
-          return <video key={asset.signed_url} src={asset.signed_url} controls />;
+          return <video key={key} src={asset.signed_url} controls />;
         }
         if (asset.type === "audio") {
-          return <audio key={asset.signed_url} src={asset.signed_url} controls />;
+          return <audio key={key} src={asset.signed_url} controls />;
         }
-        return <img key={asset.signed_url} src={asset.signed_url} alt={`asset-${piece.id}`} />;
+        return <img key={key} src={asset.signed_url} alt={`asset-${piece.id}`} />;
       })}
 
       <div>
