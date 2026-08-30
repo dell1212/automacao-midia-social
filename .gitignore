@@ -8,6 +8,8 @@
 /config.toml
 /config.toml.bak
 /storage/
+/gerar_token_private.pem
+/gerar_token_public.pem
 /.idea/
 /app/services/__pycache__
 /app/__pycache__/
