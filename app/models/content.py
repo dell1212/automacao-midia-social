@@ -382,3 +382,12 @@ class ContentPieceRead(BaseModel):
     posted_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+
+
+class PieceUpdate(BaseModel):
+    generation_prompt: Optional[str] = None
+    avatar_id: Optional[int] = None
+    voice_id: Optional[str] = None
+    content_category: Optional[ContentCategory] = None
+    risk_level: Optional[RiskLevel] = None
+    scheduled_for: Optional[datetime] = None

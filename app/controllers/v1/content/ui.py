@@ -6,9 +6,10 @@ from sqlmodel import Session
 from app.controllers import content_auth
 from app.controllers.v1.base import new_router
 from app.db import get_session
-from app.models.content import ContentPieceRead, ContentPieceStatus
+from app.models.content import ContentPieceRead, ContentPieceStatus, PieceUpdate
 from app.models.content_ui import AuditLogEntryRead, PieceDetailRead, UserSessionRead
 from app.services.content import audit
+from app.services.content import avatars as avatars_service
 from app.services.content import pieces as pieces_service
 from app.services.content import ui_pieces as ui_pieces_service
 
@@ -55,6 +56,60 @@ def get_piece(
     if detail is None:
         raise HTTPException(status_code=404, detail="Content piece not found")
     return detail
+
+
+@router.patch("/content/ui/pieces/{piece_id}", response_model=ContentPieceRead)
+def update_piece(
+    piece_id: int,
+    payload: PieceUpdate,
+    session: Session = Depends(get_session),
+    user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
+):
+    content_auth.require_role(user_session, "admin")
+
+    piece = pieces_service.get_piece(
+        session, tenant_id=user_session.tenant.id, piece_id=piece_id
+    )
+    if piece is None:
+        raise HTTPException(status_code=404, detail="Content piece not found")
+    if piece.status == ContentPieceStatus.posted:
+        raise HTTPException(
+            status_code=409, detail="Piece must not be 'posted' to edit"
+        )
+
+    if payload.avatar_id is not None and avatars_service.get_avatar(
+        session, tenant_id=user_session.tenant.id, avatar_id=payload.avatar_id
+    ) is None:
+        raise HTTPException(status_code=422, detail="avatar_id not found in this tenant")
+
+    result = pieces_service.update_piece(
+        session,
+        tenant_id=user_session.tenant.id,
+        piece_id=piece_id,
+        generation_prompt=payload.generation_prompt,
+        avatar_id=payload.avatar_id,
+        voice_id=payload.voice_id,
+        content_category=payload.content_category,
+        risk_level=payload.risk_level,
+        scheduled_for=payload.scheduled_for,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=409, detail="Piece became 'posted' before the edit was applied"
+        )
+    updated, diff = result
+
+    if diff:
+        audit.write_audit_log(
+            session,
+            tenant_id=user_session.tenant.id,
+            entity_type="content_piece",
+            entity_id=piece_id,
+            action="edited",
+            actor=f"user:{user_session.user_id}",
+            details=diff,
+        )
+    return updated
 
 
 @router.post("/content/ui/pieces/{piece_id}/approve", response_model=ContentPieceRead)
