@@ -128,6 +128,27 @@ class TestGetPieceDetail(unittest.TestCase):
         self.assertIsNone(result.assets[0].signed_url)
         self.assertEqual(result.assets[1].signed_url, "https://signed/ok.png")
 
+    def test_asset_with_no_storage_path_uses_the_url_as_is(self):
+        # Reused-avatar assets have no storage_path (nothing of ours to
+        # sign) — the reviewer must still see something, so the plain url
+        # is used instead of calling create_signed_url at all.
+        session = MagicMock()
+        piece = _piece(avatar_id=4, generation_prompt=None)
+        external_asset = _asset(storage_path=None, url="https://supabase.example/avatars/ref.png")
+
+        with patch.object(ui_pieces.pieces_service, "get_piece", return_value=piece), \
+             patch.object(
+                 ui_pieces.assets_service, "list_assets_for_piece", return_value=[external_asset]
+             ), \
+             patch.object(
+                 ui_pieces.publications_service, "list_publications_for_piece", return_value=[]
+             ), \
+             patch.object(ui_pieces.storage, "create_signed_url") as mock_sign:
+            result = ui_pieces.get_piece_detail(session, tenant_id=1, piece_id=10)
+
+        self.assertEqual(result.assets[0].signed_url, "https://supabase.example/avatars/ref.png")
+        mock_sign.assert_not_called()
+
     def test_includes_publications(self):
         session = MagicMock()
         piece = _piece()

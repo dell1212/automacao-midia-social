@@ -47,6 +47,41 @@ def create_asset(
     return asset
 
 
+def create_external_asset(
+    session: Session,
+    *,
+    tenant_id: int,
+    client_id: int,
+    content_piece_id: int,
+    asset_type: ContentAssetType,
+    url: str,
+    provider: Optional[str] = None,
+    mime_type: Optional[str] = None,
+) -> ContentAsset:
+    """Registers an asset that already lives outside our storage bucket —
+    reusing an avatar's own reference image, with no provider call and
+    nothing uploaded. storage_path stays None: there's no bucket object of
+    ours to sign for the review UI, so callers must use `url` as-is instead
+    (see _resolve_signed_url in ui_pieces.py).
+    """
+    asset = ContentAsset(
+        tenant_id=tenant_id,
+        client_id=client_id,
+        content_piece_id=content_piece_id,
+        generation_job_id=None,
+        type=asset_type,
+        url=url,
+        storage_path=None,
+        mime_type=mime_type,
+        provider=provider,
+        is_intermediate=False,
+    )
+    session.add(asset)
+    session.commit()
+    session.refresh(asset)
+    return asset
+
+
 def list_assets_for_piece(
     session: Session, *, content_piece_id: int
 ) -> List[ContentAsset]:

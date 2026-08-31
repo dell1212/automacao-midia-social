@@ -197,10 +197,26 @@ def _run_image_piece(
 ) -> Optional[str]:
     if piece.avatar_id and not piece.generation_prompt:
         # Reusing the avatar's own image: no provider call, no job, no cost.
+        # Still needs a ContentAsset row — the review UI's asset list and the
+        # publish dispatcher's get_final_asset() both read only from that
+        # table, never from piece.asset_url directly. Without this, the
+        # piece would settle into pending_approval with nothing to review
+        # and nothing publishable.
         avatar = avatars_service.get_avatar(
             session, tenant_id=tenant_id, avatar_id=piece.avatar_id
         )
-        return avatar.reference_image_url if avatar else None
+        if avatar is None:
+            return None
+        assets_service.create_external_asset(
+            session,
+            tenant_id=tenant_id,
+            client_id=client_id,
+            content_piece_id=piece.id,
+            asset_type=ContentAssetType.image,
+            url=avatar.reference_image_url,
+            provider="avatar_reuse",
+        )
+        return avatar.reference_image_url
 
     params = {"prompt": piece.generation_prompt, "aspect_ratio": aspect_ratio}
     job = jobs_service.create_job(

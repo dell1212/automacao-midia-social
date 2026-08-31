@@ -127,7 +127,10 @@ class ContentAsset(SQLModel, table=True):
         sa_column=Column(SAEnum(ContentAssetType, name="content_asset_type"))
     )
     url: str
-    storage_path: str
+    # None for an asset registered from an external URL (e.g. reusing an
+    # avatar's own reference image) — nothing to sign for the review UI,
+    # since it was never uploaded to our bucket. See create_external_asset.
+    storage_path: Optional[str] = None
     mime_type: Optional[str] = None
     size_bytes: Optional[int] = None
     width: Optional[int] = None

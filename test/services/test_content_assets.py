@@ -55,5 +55,28 @@ class TestCreateManualAsset(unittest.TestCase):
         session.commit.assert_called_once()
 
 
+class TestCreateExternalAsset(unittest.TestCase):
+    def test_creates_asset_with_no_storage_path_and_no_generation_job(self):
+        session = MagicMock()
+
+        asset = assets_service.create_external_asset(
+            session,
+            tenant_id=1,
+            client_id=2,
+            content_piece_id=10,
+            asset_type=ContentAssetType.image,
+            url="https://supabase.example/avatars/ref.png",
+            provider="avatar_reuse",
+        )
+
+        self.assertIsNone(asset.generation_job_id)
+        self.assertIsNone(asset.storage_path)
+        self.assertEqual(asset.url, "https://supabase.example/avatars/ref.png")
+        self.assertEqual(asset.provider, "avatar_reuse")
+        self.assertFalse(asset.is_intermediate)
+        session.add.assert_called_once()
+        session.commit.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

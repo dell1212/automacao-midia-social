@@ -11,11 +11,17 @@ from app.services.content import publications as publications_service
 from app.services.content import storage
 
 
-def _sign_or_none(storage_path: str) -> Optional[str]:
+def _resolve_signed_url(*, storage_path: Optional[str], url: str) -> Optional[str]:
     """One unsignable asset must not take the whole piece down with it — the
     detail response is what the reviewer needs to decide, and a 500 here left
     the piece impossible to review at all.
+
+    storage_path is None for an asset registered from an external URL (e.g.
+    reusing an avatar's reference image) — nothing of ours to sign, so the
+    plain url is what the reviewer gets instead.
     """
+    if storage_path is None:
+        return url
     try:
         return storage.create_signed_url(storage_path)
     except storage.StorageError:
@@ -33,7 +39,7 @@ def get_piece_detail(
     assets = [
         PieceAssetRead(
             type=asset.type,
-            signed_url=_sign_or_none(asset.storage_path),
+            signed_url=_resolve_signed_url(storage_path=asset.storage_path, url=asset.url),
             mime_type=asset.mime_type,
             width=asset.width,
             height=asset.height,
