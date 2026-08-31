@@ -47,6 +47,24 @@ def raise_for_response(response: requests.Response, *, provider: str) -> None:
     )
 
 
+_POLICY_ERROR_KEYWORDS = ("policy", "safety", "moderat", "prohibited", "blocklist")
+
+
+def is_policy_error_text(text: str) -> bool:
+    """Best-effort content-policy classification of a terminal failure.
+
+    Every provider phrases a content-safety refusal differently, and the
+    error text is never echoed into a GenerationError message (same rule as
+    raise_for_response, for the same reason: it can carry the request back).
+    Centralizing the heuristic keeps error_code comparable across providers
+    instead of drifting per adapter — before this, only wavespeed checked for
+    "policy" in its own error field; falai and gemini's video path always
+    reported "unknown" on a terminal failure, even a content refusal.
+    """
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in _POLICY_ERROR_KEYWORDS)
+
+
 def wrap_request_exception(exc: Exception, *, provider: str) -> GenerationError:
     """Network-level failures are transient by definition."""
     if isinstance(exc, requests.exceptions.Timeout):

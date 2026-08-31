@@ -10,6 +10,7 @@ from app.services.content.providers.base import (
     DEFAULT_SUBMIT_TIMEOUT,
     GeneratedAsset,
     download_asset,
+    is_policy_error_text,
     raise_for_response,
     wrap_request_exception,
 )
@@ -71,7 +72,7 @@ def _poll(api_key: str, prediction_id: str, poll_timeout: Optional[float] = None
         if status in _FAILURE_STATUSES:
             raise GenerationError(
                 GenerationErrorCode.content_policy
-                if "policy" in str(data.get("error", "")).lower()
+                if is_policy_error_text(str(data.get("error", "")))
                 else GenerationErrorCode.unknown,
                 f"wavespeed prediction {prediction_id} ended as {status}",
             )

@@ -11,6 +11,7 @@ from app.services.content.providers.base import (
     DEFAULT_SUBMIT_TIMEOUT,
     GeneratedAsset,
     download_asset,
+    is_policy_error_text,
     raise_for_response,
     wrap_request_exception,
 )
@@ -152,10 +153,13 @@ def generate_video(
         body = response.json()
 
         if body.get("done"):
-            if body.get("error"):
+            error = body.get("error")
+            if error:
                 raise GenerationError(
-                    GenerationErrorCode.unknown,
-                    f"gemini operation failed with code {body['error'].get('code')}",
+                    GenerationErrorCode.content_policy
+                    if is_policy_error_text(str(error))
+                    else GenerationErrorCode.unknown,
+                    f"gemini operation failed with code {error.get('code')}",
                 )
             samples = (
                 (body.get("response") or {}).get("generateVideoResponse", {})

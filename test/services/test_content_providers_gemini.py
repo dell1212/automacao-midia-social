@@ -232,6 +232,23 @@ class TestGenerateVideo(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, GenerationErrorCode.unknown)
 
+    def test_operation_policy_error_raises_content_policy(self):
+        submit = _response(json_data={"name": "operations/abc"})
+        poll = _response(
+            json_data={
+                "done": True,
+                "error": {"code": 3, "message": "Request violates content policy"},
+            }
+        )
+
+        with patch.object(gemini.requests, "post", return_value=submit), patch.object(
+            gemini.requests, "get", return_value=poll
+        ):
+            with self.assertRaises(GenerationError) as ctx:
+                gemini.generate_video(api_key="k", model_id="m", prompt="animate")
+
+        self.assertEqual(ctx.exception.code, GenerationErrorCode.content_policy)
+
     def test_deadline_elapsed_raises_timeout_without_polling(self):
         submit = _response(json_data={"name": "operations/abc"})
 

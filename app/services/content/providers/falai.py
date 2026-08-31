@@ -10,6 +10,7 @@ from app.services.content.providers.base import (
     DEFAULT_SUBMIT_TIMEOUT,
     GeneratedAsset,
     download_asset,
+    is_policy_error_text,
     raise_for_response,
     wrap_request_exception,
 )
@@ -62,7 +63,8 @@ def _poll(
             raise wrap_request_exception(exc, provider="falai") from exc
 
         raise_for_response(response, provider="falai")
-        status = str(response.json().get("status", "")).upper()
+        status_body = response.json()
+        status = str(status_body.get("status", "")).upper()
 
         if status == "COMPLETED":
             try:
@@ -77,7 +79,10 @@ def _poll(
             return result.json()
         if status in ("FAILED", "CANCELLED"):
             raise GenerationError(
-                GenerationErrorCode.unknown, f"falai request ended as {status}"
+                GenerationErrorCode.content_policy
+                if is_policy_error_text(str(status_body))
+                else GenerationErrorCode.unknown,
+                f"falai request ended as {status}",
             )
         time.sleep(DEFAULT_POLL_INTERVAL_SECONDS)
 
