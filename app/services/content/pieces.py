@@ -101,6 +101,7 @@ def create_piece(session: Session, *, payload) -> tuple[ContentPiece, bool]:
         type=payload.type,
         status=ContentPieceStatus.generating,
         generation_prompt=payload.generation_prompt,
+        narration_script=payload.narration_script,
         avatar_id=payload.avatar_id,
         source_image_piece_id=payload.source_image_piece_id,
         voice_id=payload.voice_id,
@@ -250,6 +251,7 @@ def update_piece(
     tenant_id: int,
     piece_id: int,
     generation_prompt: Optional[str] = None,
+    narration_script: Optional[str] = None,
     avatar_id: Optional[int] = None,
     voice_id: Optional[str] = None,
     content_category: Optional[ContentCategory] = None,
@@ -262,6 +264,7 @@ def update_piece(
 
     changes = {
         "generation_prompt": generation_prompt,
+        "narration_script": narration_script,
         "avatar_id": avatar_id,
         "voice_id": voice_id,
         "content_category": content_category,

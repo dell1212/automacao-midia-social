@@ -16,6 +16,7 @@ class TestCreateTemplate(unittest.TestCase):
                 campaign_id=99,
                 type=ContentPieceType.image,
                 generation_prompt="a cat",
+                narration_script=None,
                 avatar_id=None,
                 voice_id=None,
                 is_synthetic_media=False,
@@ -39,6 +40,7 @@ class TestCreateTemplate(unittest.TestCase):
                 campaign_id=5,
                 type=ContentPieceType.video,
                 generation_prompt="a dog",
+                narration_script="Meet Rex, the good boy next door.",
                 avatar_id=None,
                 voice_id="v1",
                 is_synthetic_media=True,
@@ -53,6 +55,7 @@ class TestCreateTemplate(unittest.TestCase):
         self.assertEqual(added.campaign_id, 5)
         self.assertEqual(added.type, ContentPieceType.video)
         self.assertEqual(added.aspect_ratio, "16:9")
+        self.assertEqual(added.narration_script, "Meet Rex, the good boy next door.")
         session.commit.assert_called_once()
 
 
@@ -120,6 +123,25 @@ class TestUpdateTemplate(unittest.TestCase):
         self.assertEqual(result.generation_prompt, "new")
         self.assertEqual(result.aspect_ratio, "1:1")
         session.commit.assert_called_once()
+
+    def test_updates_narration_script(self):
+        template = ContentGenerationTemplate(
+            id=1, campaign_id=1, type=ContentPieceType.video, generation_prompt="a dog running",
+            aspect_ratio="9:16", is_active=True,
+        )
+        session = MagicMock()
+        session.exec.return_value.first.return_value = template
+
+        with patch.object(templates_service, "get_campaign", return_value=MagicMock(id=1)):
+            result = templates_service.update_template(
+                session, tenant_id=1, template_id=1,
+                narration_script="Meet Rex, the good boy next door.",
+            )
+
+        self.assertEqual(result.narration_script, "Meet Rex, the good boy next door.")
+        # generation_prompt (the visual prompt) is untouched by this edit —
+        # the two fields are independent.
+        self.assertEqual(result.generation_prompt, "a dog running")
 
 
 class TestDeactivateTemplate(unittest.TestCase):

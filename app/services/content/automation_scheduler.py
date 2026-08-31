@@ -122,6 +122,7 @@ def _fill_campaign_calendars(session: Session, *, batch_limit: int) -> None:
                 idempotency_key=f"auto:{campaign.id}:{slot.date().isoformat()}",
                 is_synthetic_media=template.is_synthetic_media,
                 generation_prompt=template.generation_prompt,
+                narration_script=template.narration_script,
                 avatar_id=template.avatar_id,
                 voice_id=template.voice_id,
                 content_category=template.content_category,

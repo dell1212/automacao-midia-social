@@ -246,7 +246,10 @@ def _run_audio_piece(
     session: Session, piece: ContentPiece, *, tenant_id: int, client_id: int
 ) -> Optional[str]:
     voice_id = _resolve_voice_id(session, piece, tenant_id=tenant_id)
-    params = {"text": piece.generation_prompt, "voice_id": voice_id}
+    params = {
+        "text": piece.narration_script or piece.generation_prompt,
+        "voice_id": voice_id,
+    }
     job = jobs_service.create_job(
         session,
         tenant_id=tenant_id,
@@ -296,7 +299,10 @@ def _run_video_piece(
     narration_asset = None
     voice_id = _resolve_voice_id(session, piece, tenant_id=tenant_id)
     if voice_id:
-        voice_params = {"text": piece.generation_prompt, "voice_id": voice_id}
+        voice_params = {
+            "text": piece.narration_script or piece.generation_prompt,
+            "voice_id": voice_id,
+        }
         voice_job = jobs_service.create_job(
             session,
             tenant_id=tenant_id,

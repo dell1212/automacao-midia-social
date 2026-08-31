@@ -92,6 +92,7 @@ def update_piece(
         tenant_id=user_session.tenant.id,
         piece_id=piece_id,
         generation_prompt=payload.generation_prompt,
+        narration_script=payload.narration_script,
         avatar_id=payload.avatar_id,
         voice_id=payload.voice_id,
         content_category=payload.content_category,

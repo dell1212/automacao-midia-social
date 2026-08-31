@@ -128,6 +128,11 @@ class ContentPiece(SQLModel, table=True):
     publication_summary: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     idempotency_key: Optional[str] = Field(default=None, index=True)
     generation_prompt: Optional[str] = None
+    # Spoken text for audio/video narration, distinct from generation_prompt
+    # (which describes the visual). None falls back to generation_prompt at
+    # generation time — a video piece with no separate script keeps behaving
+    # exactly as before this field existed.
+    narration_script: Optional[str] = None
     avatar_id: Optional[int] = Field(default=None, foreign_key="content_avatars.id")
     source_image_piece_id: Optional[int] = Field(
         default=None, foreign_key="content_pieces.id"
@@ -182,6 +187,7 @@ class ContentGenerationTemplate(SQLModel, table=True):
         sa_column=Column(SAEnum(ContentPieceType, name="content_piece_type"))
     )
     generation_prompt: Optional[str] = None
+    narration_script: Optional[str] = None
     avatar_id: Optional[int] = Field(default=None, foreign_key="content_avatars.id")
     voice_id: Optional[str] = None
     is_synthetic_media: bool = Field(default=False)
@@ -314,6 +320,7 @@ class GenerationTemplateCreate(BaseModel):
     campaign_id: int
     type: ContentPieceType
     generation_prompt: str
+    narration_script: Optional[str] = None
     avatar_id: Optional[int] = None
     voice_id: Optional[str] = None
     is_synthetic_media: bool = False
@@ -336,6 +343,7 @@ class GenerationTemplateRead(BaseModel):
     campaign_id: int
     type: ContentPieceType
     generation_prompt: Optional[str]
+    narration_script: Optional[str]
     avatar_id: Optional[int]
     voice_id: Optional[str]
     is_synthetic_media: bool
@@ -349,6 +357,7 @@ class GenerationTemplateRead(BaseModel):
 
 class GenerationTemplateUpdate(BaseModel):
     generation_prompt: Optional[str] = None
+    narration_script: Optional[str] = None
     avatar_id: Optional[int] = None
     voice_id: Optional[str] = None
     is_synthetic_media: Optional[bool] = None
@@ -364,6 +373,7 @@ class ContentPieceCreate(BaseModel):
     idempotency_key: str
     is_synthetic_media: bool
     generation_prompt: Optional[str] = None
+    narration_script: Optional[str] = None
     avatar_id: Optional[int] = None
     source_image_piece_id: Optional[int] = None
     voice_id: Optional[str] = None
@@ -380,6 +390,7 @@ class ContentPieceRead(BaseModel):
     status: ContentPieceStatus
     asset_url: Optional[str]
     generation_prompt: Optional[str]
+    narration_script: Optional[str]
     avatar_id: Optional[int]
     source_image_piece_id: Optional[int]
     voice_id: Optional[str]
@@ -396,6 +407,7 @@ class ContentPieceRead(BaseModel):
 
 class PieceUpdate(BaseModel):
     generation_prompt: Optional[str] = None
+    narration_script: Optional[str] = None
     avatar_id: Optional[int] = None
     voice_id: Optional[str] = None
     content_category: Optional[ContentCategory] = None

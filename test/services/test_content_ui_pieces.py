@@ -15,6 +15,7 @@ def _piece(**overrides):
         type=ContentPieceType.image,
         status=ContentPieceStatus.pending_approval,
         generation_prompt="a cat",
+        narration_script=None,
         avatar_id=None,
         is_synthetic_media=True,
         content_category=None,

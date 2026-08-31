@@ -62,6 +62,7 @@ def get_piece_detail(
         type=piece.type,
         status=piece.status,
         generation_prompt=piece.generation_prompt,
+        narration_script=piece.narration_script,
         avatar_id=piece.avatar_id,
         is_synthetic_media=piece.is_synthetic_media,
         content_category=piece.content_category,

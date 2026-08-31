@@ -20,6 +20,7 @@ export function PieceDetail() {
   const queryClient = useQueryClient();
 
   const [generationPrompt, setGenerationPrompt] = useState("");
+  const [narrationScript, setNarrationScript] = useState("");
   const [riskLevel, setRiskLevel] = useState("");
   const [contentCategory, setContentCategory] = useState("");
   const [avatarId, setAvatarId] = useState("");
@@ -81,6 +82,7 @@ export function PieceDetail() {
       apiClient.patch(`/content/ui/pieces/${id}`, payload),
     onSuccess: () => {
       setGenerationPrompt("");
+      setNarrationScript("");
       setRiskLevel("");
       setContentCategory("");
       setAvatarId("");
@@ -124,6 +126,7 @@ export function PieceDetail() {
       <h1>Peça #{piece.id}</h1>
       <p>Status: {piece.status}</p>
       <p>Prompt: {piece.generation_prompt ?? "(sem prompt)"}</p>
+      <p>Roteiro de narração: {piece.narration_script ?? "(usa o prompt de geração)"}</p>
       <p>Categoria: {piece.content_category ?? "—"} · Risco: {piece.risk_level}</p>
       <p>Mídia sintética: {piece.is_synthetic_media ? "sim" : "não"}</p>
 
@@ -176,6 +179,7 @@ export function PieceDetail() {
             event.preventDefault();
             edit.mutate({
               generation_prompt: generationPrompt || undefined,
+              narration_script: narrationScript || undefined,
               risk_level: riskLevel || undefined,
               content_category: contentCategory || undefined,
               avatar_id: avatarId ? Number(avatarId) : undefined,
@@ -190,6 +194,14 @@ export function PieceDetail() {
               value={generationPrompt}
               onChange={(event) => setGenerationPrompt(event.target.value)}
               placeholder="Novo prompt de geração"
+            />
+          </label>
+          <label>
+            Roteiro de narração
+            <input
+              value={narrationScript}
+              onChange={(event) => setNarrationScript(event.target.value)}
+              placeholder="Novo roteiro de narração (opcional — sem isso, usa o prompt de geração)"
             />
           </label>
           <label>

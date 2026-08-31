@@ -11,6 +11,7 @@ export function GenerationTemplates() {
   const [campaignId, setCampaignId] = useState<number | null>(null);
   const [type, setType] = useState<"video" | "image" | "audio">("image");
   const [generationPrompt, setGenerationPrompt] = useState("");
+  const [narrationScript, setNarrationScript] = useState("");
   const [aspectRatio, setAspectRatio] = useState("9:16");
   const [customAspectRatio, setCustomAspectRatio] = useState("");
   const [avatarId, setAvatarId] = useState<number | null>(null);
@@ -47,6 +48,7 @@ export function GenerationTemplates() {
           campaign_id: campaignId,
           type,
           generation_prompt: generationPrompt,
+          narration_script: narrationScript || null,
           is_synthetic_media: false,
           aspect_ratio: effectiveAspectRatio,
           avatar_id: avatarId,
@@ -55,6 +57,7 @@ export function GenerationTemplates() {
       ),
     onSuccess: () => {
       setGenerationPrompt("");
+      setNarrationScript("");
       setAvatarId(null);
       setVoiceId("");
       setAspectRatio("9:16");
@@ -130,6 +133,14 @@ export function GenerationTemplates() {
               onChange={(event) => setGenerationPrompt(event.target.value)}
               placeholder="Prompt de geração"
               required
+            />
+          </label>
+          <label>
+            Roteiro de narração (opcional)
+            <input
+              value={narrationScript}
+              onChange={(event) => setNarrationScript(event.target.value)}
+              placeholder="Texto pra narração em áudio/vídeo — sem isso, usa o prompt de geração"
             />
           </label>
           <label>

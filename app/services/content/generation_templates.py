@@ -13,6 +13,7 @@ def create_template(
     campaign_id: int,
     type: ContentPieceType,
     generation_prompt: Optional[str],
+    narration_script: Optional[str],
     avatar_id: Optional[int],
     voice_id: Optional[str],
     is_synthetic_media: bool,
@@ -27,6 +28,7 @@ def create_template(
         campaign_id=campaign_id,
         type=type,
         generation_prompt=generation_prompt,
+        narration_script=narration_script,
         avatar_id=avatar_id,
         voice_id=voice_id,
         is_synthetic_media=is_synthetic_media,
@@ -77,6 +79,7 @@ def update_template(
     tenant_id: int,
     template_id: int,
     generation_prompt: Optional[str] = None,
+    narration_script: Optional[str] = None,
     avatar_id: Optional[int] = None,
     voice_id: Optional[str] = None,
     is_synthetic_media: Optional[bool] = None,
@@ -90,6 +93,8 @@ def update_template(
         return None
     if generation_prompt is not None:
         template.generation_prompt = generation_prompt
+    if narration_script is not None:
+        template.narration_script = narration_script
     if avatar_id is not None:
         template.avatar_id = avatar_id
     if voice_id is not None:

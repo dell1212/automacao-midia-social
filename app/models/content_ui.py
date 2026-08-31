@@ -44,6 +44,7 @@ class PieceDetailRead(BaseModel):
     type: ContentPieceType
     status: ContentPieceStatus
     generation_prompt: Optional[str]
+    narration_script: Optional[str]
     avatar_id: Optional[int]
     is_synthetic_media: bool
     content_category: Optional[ContentCategory]

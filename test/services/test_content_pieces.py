@@ -294,6 +294,41 @@ class TestUpdatePiece(unittest.TestCase):
         )
         self.assertNotIn("status", diff)
 
+    def test_narration_script_diffs_independently_of_generation_prompt(self):
+        piece = MagicMock(
+            id=10,
+            status=ContentPieceStatus.draft,
+            generation_prompt="a robot waving",
+            narration_script=None,
+            avatar_id=None,
+            voice_id=None,
+            content_category=None,
+            risk_level=RiskLevel.none,
+            scheduled_for=None,
+        )
+        session = MagicMock()
+        session.exec.return_value.rowcount = 1
+
+        with patch.object(pieces_service, "get_piece", return_value=piece):
+            result = pieces_service.update_piece(
+                session,
+                tenant_id=1,
+                piece_id=10,
+                narration_script="Meet Rex, the good boy next door.",
+            )
+
+        updated, diff = result
+        self.assertEqual(
+            diff,
+            {
+                "narration_script": {
+                    "before": None,
+                    "after": "Meet Rex, the good boy next door.",
+                }
+            },
+        )
+        self.assertNotIn("generation_prompt", diff)
+
     def test_reverts_approved_to_pending_approval_and_logs_it(self):
         piece = MagicMock(
             id=10,

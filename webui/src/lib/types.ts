@@ -22,6 +22,7 @@ export interface ContentPieceSummary {
   type: "video" | "image" | "audio";
   status: ContentPieceStatus;
   generation_prompt: string | null;
+  narration_script: string | null;
   scheduled_for: string | null;
   posted_at: string | null;
   created_at: string;
@@ -122,6 +123,7 @@ export interface GenerationTemplate {
   campaign_id: number;
   type: "video" | "image" | "audio";
   generation_prompt: string | null;
+  narration_script: string | null;
   avatar_id: number | null;
   voice_id: string | null;
   is_synthetic_media: boolean;
@@ -137,6 +139,7 @@ export interface GenerationTemplatePayload {
   campaign_id?: number;
   type: "video" | "image" | "audio";
   generation_prompt: string;
+  narration_script?: string | null;
   avatar_id?: number | null;
   voice_id?: string | null;
   is_synthetic_media: boolean;
@@ -183,6 +186,7 @@ export interface AuditLogEntry {
 
 export interface PieceUpdatePayload {
   generation_prompt?: string | null;
+  narration_script?: string | null;
   avatar_id?: number | null;
   voice_id?: string | null;
   content_category?: string | null;
