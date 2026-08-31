@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mosaic Automação — Login local</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  body.embedded { display: block; }
+  #app-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: none; }
+  body.embedded #app-frame { display: block; }
+  body.embedded #login-card { display: none; }
+  #login-card {
+    width: min(420px, 90vw);
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 28px;
+  }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.hint { font-size: 13px; color: #94a3b8; margin: 0 0 20px; line-height: 1.5; }
+  textarea {
+    width: 100%;
+    min-height: 110px;
+    box-sizing: border-box;
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    resize: vertical;
+  }
+  button {
+    margin-top: 14px;
+    width: 100%;
+    padding: 10px;
+    border: 0;
+    border-radius: 8px;
+    background: #6366f1;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { background: #4f46e5; }
+  #error { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 16px; }
+</style>
+</head>
+<body>
+  <div id="login-card">
+    <h1>Mosaic Automação</h1>
+    <p class="hint">
+      Cole abaixo o token gerado por <code>python gerar_token.py</code>.
+      Esta página é um substituto provisório do "app mãe" (login/iframe host) —
+      ela mesma não autentica ninguém, só repassa o token pro app via postMessage.
+    </p>
+    <textarea id="token" placeholder="eyJhbGciOiJSUzI1NiIs..."></textarea>
+    <button id="enter">Entrar</button>
+    <div id="error"></div>
+  </div>
+  <iframe id="app-frame" title="Mosaic Automação"></iframe>
+
+  <script>
+    (function () {
+      var STORAGE_KEY = "mosaic_local_login_token";
+      var tokenField = document.getElementById("token");
+      var errorBox = document.getElementById("error");
+      var frame = document.getElementById("app-frame");
+
+      var saved = sessionStorage.getItem(STORAGE_KEY);
+      if (saved) tokenField.value = saved;
+
+      function enter() {
+        var token = tokenField.value.trim();
+        if (!token) {
+          errorBox.textContent = "Cole um token antes de entrar.";
+          return;
+        }
+        errorBox.textContent = "";
+        sessionStorage.setItem(STORAGE_KEY, token);
+
+        // The child SPA posts {type: "ready"} to this origin once mounted;
+        // reply with the session on that signal instead of guessing timing
+        // off iframe "load" (React effects can run after the load event).
+        window.addEventListener("message", function onMessage(event) {
+          if (event.origin !== window.location.origin) return;
+          if (event.data && event.data.type === "ready" && event.source) {
+            event.source.postMessage({ type: "session", token: token }, event.origin);
+          }
+        });
+
+        document.body.classList.add("embedded");
+        frame.src = "/";
+      }
+
+      document.getElementById("enter").addEventListener("click", enter);
+      tokenField.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) enter();
+      });
+    })();
+  </script>
+</body>
+</html>
