@@ -58,6 +58,17 @@ KIND_TIMEOUT_SECONDS: dict[GenerationKind, int] = {
 _FETCH_TIMEOUT = (30, 120)
 
 
+def shutdown_executors(*, wait: bool = True) -> None:
+    """Drain in-flight generation work on ASGI shutdown.
+
+    Called from application_lifespan, mirroring publish_dispatcher's
+    stop_dispatcher(): draining beats abandoning a piece mid-generation,
+    which would otherwise leave it stuck in `generating` forever.
+    """
+    _FAST_EXECUTOR.shutdown(wait=wait)
+    _VIDEO_EXECUTOR.shutdown(wait=wait)
+
+
 def schedule_piece(
     piece_id: int,
     *,

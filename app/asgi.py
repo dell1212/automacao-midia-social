@@ -64,6 +64,11 @@ async def application_lifespan(_: FastAPI):
         logger.info("content publish dispatcher stopped")
         stop_scheduler()
         logger.info("content automation scheduler stopped")
+
+        from app.services.content.pipeline import shutdown_executors
+
+        shutdown_executors()
+        logger.info("content generation executors shut down")
         logger.info("shutdown event")
 
 
