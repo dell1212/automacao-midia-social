@@ -1,22 +1,37 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --text: hsl(210 15% 38%);
+  --text-h: hsl(210 24% 16%);
+  --bg: hsl(210 20% 98%);
+  --card-bg: hsl(0 0% 100%);
+  --border: hsl(210 20% 88%);
+  --code-bg: hsl(210 20% 95%);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --primary: hsl(203 89% 34%);
+  --primary-hover: hsl(203 89% 28%);
+  --primary-fg: hsl(0 0% 100%);
+
+  --accent: hsl(212 89% 63%);
+  --accent-bg: hsl(212 89% 63% / 0.12);
+  --accent-border: hsl(212 89% 63% / 0.4);
+
+  --success: hsl(148 56% 38%);
+  --warning: hsl(38 92% 46%);
+  --destructive: hsl(0 72% 50%);
+  --ring: hsl(203 89% 34% / 0.35);
+
+  --radius: 10px;
+  /* One height for every control on a form row, so a button never renders
+     taller than the input it sits next to. */
+  --control-h: 32px;
+  --shadow:
+    rgba(0, 0, 0, 0.08) 0 10px 15px -3px, rgba(0, 0, 0, 0.04) 0 4px 6px -2px;
+
+  --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
+  font: 15px/150% var(--sans);
+  letter-spacing: 0;
   color-scheme: light dark;
   color: var(--text);
   background: var(--bg);
@@ -24,41 +39,36 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
+    --text: hsl(210 12% 65%);
+    --text-h: hsl(210 20% 98%);
+    --bg: hsl(210 24% 8%);
+    --card-bg: hsl(210 24% 12%);
+    --border: hsl(210 24% 20%);
+    --code-bg: hsl(210 24% 16%);
+
+    --primary: hsl(212 89% 63%);
+    --primary-hover: hsl(212 89% 70%);
+    --primary-fg: hsl(210 24% 8%);
+
+    --accent: hsl(212 89% 63%);
+    --accent-bg: hsl(212 89% 63% / 0.15);
+    --accent-border: hsl(212 89% 63% / 0.5);
+
+    --success: hsl(148 56% 46%);
+    --warning: hsl(38 85% 55%);
+    --destructive: hsl(0 62% 55%);
+    --ring: hsl(212 89% 63% / 0.4);
+
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
   }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+* {
   box-sizing: border-box;
 }
 
@@ -66,46 +76,286 @@ body {
   margin: 0;
 }
 
+#root {
+  width: 1000px;
+  max-width: 100%;
+  margin: 0 auto;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  border-inline: 1px solid var(--border);
+}
+
+#root > div {
+  flex: 1;
+  padding: 20px 28px;
+  text-align: left;
+}
+
 h1,
 h2 {
   font-family: var(--heading);
-  font-weight: 500;
   color: var(--text-h);
 }
 
 h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  margin: 0 0 16px;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
+h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  margin: 20px 0 10px;
+}
+
+p {
+  margin: 0 0 8px;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Top navigation: ConfigNav's links and PieceQueue's status tabs both
+   render as <a>/<button> directly inside a <nav>, so this covers both
+   without touching either component. */
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 10px 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card-bg);
+}
+
+nav a,
+nav button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  margin: 0;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+nav a:hover,
+nav button:hover {
+  background: var(--code-bg);
   color: var(--text-h);
 }
 
+nav a.active,
+nav button[aria-current='true'] {
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary-fg);
+  background: var(--primary);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  height: var(--control-h);
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+
+button:hover {
+  background: var(--primary-hover);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Matches the labels' bottom alignment for buttons that sit inline next to
+   them outside a form (the History export pair). Ignored inside nav/forms,
+   which are flex. */
+button {
+  vertical-align: bottom;
+}
+
+button + button {
+  margin-left: 8px;
+}
+
+nav button + button {
+  margin-left: 0;
+}
+
+/* Every label stacks its caption over its control — including the standalone
+   filter selects (Campanha, Entidade, Período, client pickers) that sit
+   outside any <form> and would otherwise render inline while the form ones
+   stack. inline-flex is what lets one rule serve both: a flex container
+   blockifies it back to `flex` for form rows, and it flows inline for the
+   standalone filters. */
+label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text);
+  vertical-align: bottom;
+  margin: 0 8px 12px 0;
+}
+
+form label,
+.controls-row label {
+  margin: 0;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-h);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+}
+
+input,
+select {
+  height: var(--control-h);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+/* flex-end, not center: a bare button/span has no caption above it like a
+   label does, so centering it against a taller label+input stack floated it
+   above the controls it belongs to. Aligning bottoms puts everything on the
+   same line. `.controls-row` is the same layout for control clusters that
+   aren't a <form> (History's entity/period filters + export buttons, its
+   pagination row) — plain <div>s, so they need the class instead of the tag. */
+form,
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 4px 0 16px;
+}
+
+ul {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-width: 520px;
+}
+
+/* Rows that pair a label with a trailing action (config lists: Clients,
+   Campaigns, Avatars, Providers, ApprovalRules, Templates, SocialAccounts)
+   anchor their <button> to a fixed right edge instead of trailing directly
+   after however long the label text happens to be. Targeting `button`
+   specifically (not `*`) is what excludes PieceQueue's single-<Link> rows,
+   which fill the whole row instead — a bare text node before an element
+   doesn't count as a sibling for :only-child, so that would otherwise match
+   every row here too. */
+li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+li:last-child {
+  border-bottom: none;
+}
+
+li > button:last-child {
+  margin-left: auto;
+}
+
+li a {
+  color: inherit;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  font-weight: 600;
+  color: var(--text-h);
+  white-space: nowrap;
+}
+
+img,
+video {
+  max-width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+audio {
+  width: 100%;
+}
+
 code {
-  font-size: 15px;
+  font-family: var(--mono);
+  font-size: 13px;
   line-height: 135%;
+  display: inline-flex;
   padding: 4px 8px;
+  border-radius: 4px;
   background: var(--code-bg);
+  color: var(--text-h);
 }
