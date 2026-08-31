@@ -184,48 +184,66 @@ export function PieceDetail() {
             });
           }}
         >
-          <input
-            value={generationPrompt}
-            onChange={(event) => setGenerationPrompt(event.target.value)}
-            placeholder="Novo prompt de geração"
-          />
-          <select value={riskLevel} onChange={(event) => setRiskLevel(event.target.value)}>
-            <option value="">Manter risco atual</option>
-            <option value="none">Nenhum</option>
-            <option value="low">Baixo</option>
-            <option value="medium">Médio</option>
-            <option value="high">Alto</option>
-          </select>
-          <select value={contentCategory} onChange={(event) => setContentCategory(event.target.value)}>
-            <option value="">Manter categoria atual</option>
-            <option value="medical">Médico</option>
-            <option value="pharmaceutical">Farmacêutico</option>
-            <option value="financial">Financeiro</option>
-            <option value="insurance">Seguros</option>
-            <option value="legal">Jurídico</option>
-            <option value="alcohol">Álcool</option>
-            <option value="gambling">Apostas</option>
-            <option value="political">Político</option>
-            <option value="regulated_product">Produto regulado</option>
-          </select>
-          <select value={avatarId} onChange={(event) => setAvatarId(event.target.value)}>
-            <option value="">Manter avatar atual</option>
-            {avatars.data?.map((avatar) => (
-              <option key={avatar.id} value={avatar.id}>
-                {avatar.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={voiceId}
-            onChange={(event) => setVoiceId(event.target.value)}
-            placeholder="Novo voice_id (opcional)"
-          />
-          <input
-            type="datetime-local"
-            value={scheduledFor}
-            onChange={(event) => setScheduledFor(event.target.value)}
-          />
+          <label>
+            Prompt de geração
+            <input
+              value={generationPrompt}
+              onChange={(event) => setGenerationPrompt(event.target.value)}
+              placeholder="Novo prompt de geração"
+            />
+          </label>
+          <label>
+            Nível de risco
+            <select value={riskLevel} onChange={(event) => setRiskLevel(event.target.value)}>
+              <option value="">Manter risco atual</option>
+              <option value="none">Nenhum</option>
+              <option value="low">Baixo</option>
+              <option value="medium">Médio</option>
+              <option value="high">Alto</option>
+            </select>
+          </label>
+          <label>
+            Categoria de conteúdo
+            <select value={contentCategory} onChange={(event) => setContentCategory(event.target.value)}>
+              <option value="">Manter categoria atual</option>
+              <option value="medical">Médico</option>
+              <option value="pharmaceutical">Farmacêutico</option>
+              <option value="financial">Financeiro</option>
+              <option value="insurance">Seguros</option>
+              <option value="legal">Jurídico</option>
+              <option value="alcohol">Álcool</option>
+              <option value="gambling">Apostas</option>
+              <option value="political">Político</option>
+              <option value="regulated_product">Produto regulado</option>
+            </select>
+          </label>
+          <label>
+            Avatar
+            <select value={avatarId} onChange={(event) => setAvatarId(event.target.value)}>
+              <option value="">Manter avatar atual</option>
+              {avatars.data?.map((avatar) => (
+                <option key={avatar.id} value={avatar.id}>
+                  {avatar.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Voice ID
+            <input
+              value={voiceId}
+              onChange={(event) => setVoiceId(event.target.value)}
+              placeholder="Novo voice_id (opcional)"
+            />
+          </label>
+          <label>
+            Agendar para
+            <input
+              type="datetime-local"
+              value={scheduledFor}
+              onChange={(event) => setScheduledFor(event.target.value)}
+            />
+          </label>
           <button type="submit" disabled={!canEdit || edit.isPending}>
             Salvar edição
           </button>
@@ -241,10 +259,13 @@ export function PieceDetail() {
             if (assetFile) replaceAsset.mutate(assetFile);
           }}
         >
-          <input
-            type="file"
-            onChange={(event) => setAssetFile(event.target.files?.[0] ?? null)}
-          />
+          <label>
+            Novo asset
+            <input
+              type="file"
+              onChange={(event) => setAssetFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
           <button type="submit" disabled={!canEdit || !assetFile || replaceAsset.isPending}>
             Substituir asset
           </button>

@@ -55,6 +55,7 @@ export function Providers() {
               type="number"
               defaultValue={provider.priority}
               disabled={!provider.is_active}
+              title="Prioridade entre providers do mesmo tipo — número menor é tentado primeiro"
               onBlur={(event) =>
                 updatePriority.mutate({ id: provider.id, priority: Number(event.target.value) })
               }
@@ -79,32 +80,45 @@ export function Providers() {
             create.mutate({ kind, provider: providerName, credentials, config: {}, priority });
           }}
         >
-          <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
-            <option value="image">Imagem</option>
-            <option value="video">Vídeo</option>
-            <option value="voice">Voz</option>
-          </select>
-          <select
-            value={providerName}
-            onChange={(event) => setProviderName(event.target.value as typeof providerName)}
-          >
-            <option value="wavespeed">Wavespeed</option>
-            <option value="falai">fal.ai</option>
-            <option value="gemini">Gemini</option>
-            <option value="elevenlabs">ElevenLabs</option>
-          </select>
-          <input
-            type="password"
-            value={credentials}
-            onChange={(event) => setCredentials(event.target.value)}
-            placeholder="API key"
-            required
-          />
-          <input
-            type="number"
-            value={priority}
-            onChange={(event) => setPriority(Number(event.target.value))}
-          />
+          <label>
+            Tipo
+            <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
+              <option value="image">Imagem</option>
+              <option value="video">Vídeo</option>
+              <option value="voice">Voz</option>
+            </select>
+          </label>
+          <label>
+            Provider
+            <select
+              value={providerName}
+              onChange={(event) => setProviderName(event.target.value as typeof providerName)}
+            >
+              <option value="wavespeed">Wavespeed</option>
+              <option value="falai">fal.ai</option>
+              <option value="gemini">Gemini</option>
+              <option value="elevenlabs">ElevenLabs</option>
+            </select>
+          </label>
+          <label>
+            API key
+            <input
+              type="password"
+              value={credentials}
+              onChange={(event) => setCredentials(event.target.value)}
+              placeholder="API key"
+              required
+            />
+          </label>
+          <label>
+            Prioridade
+            <input
+              type="number"
+              value={priority}
+              onChange={(event) => setPriority(Number(event.target.value))}
+              title="Número menor é tentado primeiro entre providers do mesmo tipo"
+            />
+          </label>
           <button type="submit" disabled={create.isPending}>
             Adicionar
           </button>

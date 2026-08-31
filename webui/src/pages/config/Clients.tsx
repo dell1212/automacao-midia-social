@@ -59,12 +59,15 @@ export function Clients() {
             create.mutate({ name });
           }}
         >
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Nome do client"
-            required
-          />
+          <label>
+            Nome
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Nome do client"
+              required
+            />
+          </label>
           <button type="submit" disabled={create.isPending}>
             Criar
           </button>

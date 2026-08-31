@@ -68,32 +68,42 @@ export function Campaigns() {
             if (clientId !== null) create.mutate();
           }}
         >
-          <select
-            value={clientId ?? ""}
-            onChange={(event) => setClientId(Number(event.target.value))}
-            required
-          >
-            <option value="" disabled>
-              Selecione um client
-            </option>
-            {clients.data?.map((client) => (
-              <option key={client.id} value={client.id}>
-                {client.name}
+          <label>
+            Client
+            <select
+              value={clientId ?? ""}
+              onChange={(event) => setClientId(Number(event.target.value))}
+              required
+            >
+              <option value="" disabled>
+                Selecione um client
               </option>
-            ))}
-          </select>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Nome da campanha"
-            required
-          />
-          <input
-            type="number"
-            value={horizonDays}
-            onChange={(event) => setHorizonDays(Number(event.target.value))}
-            min={1}
-          />
+              {clients.data?.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Nome da campanha
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Nome da campanha"
+              required
+            />
+          </label>
+          <label>
+            Horizonte de geração (dias)
+            <input
+              type="number"
+              value={horizonDays}
+              onChange={(event) => setHorizonDays(Number(event.target.value))}
+              min={1}
+              title="Quantos dias à frente a automação gera conteúdo para esta campanha"
+            />
+          </label>
           <button type="submit" disabled={create.isPending}>
             Criar
           </button>
