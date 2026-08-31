@@ -101,14 +101,6 @@ export interface Avatar {
   created_at: string;
 }
 
-export interface AvatarPayload {
-  client_id?: number;
-  name: string;
-  reference_image_url: string;
-  voice_provider?: string | null;
-  voice_id?: string | null;
-}
-
 export interface ApprovalRule {
   id: number;
   campaign_id: number;
@@ -144,7 +136,7 @@ export interface GenerationTemplate {
 export interface GenerationTemplatePayload {
   campaign_id?: number;
   type: "video" | "image" | "audio";
-  generation_prompt?: string | null;
+  generation_prompt: string;
   avatar_id?: number | null;
   voice_id?: string | null;
   is_synthetic_media: boolean;

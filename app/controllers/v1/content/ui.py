@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, File, Form, HTTPException, Query, UploadFile
@@ -225,7 +226,7 @@ async def replace_piece_asset(
     data = await file.read()
     uploaded = storage.upload_bytes(
         tenant_id=user_session.tenant.id,
-        content_piece_id=piece_id,
+        path_prefix=str(piece_id),
         filename=file.filename or "upload",
         data=data,
         content_type=file.content_type or "application/octet-stream",
@@ -273,6 +274,7 @@ async def replace_piece_asset(
 def list_audit_log(
     entity_type: Optional[str] = None,
     entity_id: Optional[int] = None,
+    since: Optional[datetime] = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
     session: Session = Depends(get_session),
@@ -283,6 +285,7 @@ def list_audit_log(
         tenant_id=user_session.tenant.id,
         entity_type=entity_type,
         entity_id=entity_id,
+        since=since,
         limit=limit,
         offset=offset,
     )

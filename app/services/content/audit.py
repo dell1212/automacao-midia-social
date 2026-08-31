@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 
 from sqlmodel import Session, select
@@ -35,6 +36,7 @@ def list_audit_log(
     tenant_id: int,
     entity_type: Optional[str] = None,
     entity_id: Optional[int] = None,
+    since: Optional[datetime] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> List[ContentAuditLog]:
@@ -43,5 +45,7 @@ def list_audit_log(
         query = query.where(ContentAuditLog.entity_type == entity_type)
     if entity_id is not None:
         query = query.where(ContentAuditLog.entity_id == entity_id)
+    if since is not None:
+        query = query.where(ContentAuditLog.created_at >= since)
     query = query.order_by(ContentAuditLog.created_at.desc()).limit(limit).offset(offset)
     return list(session.exec(query).all())
