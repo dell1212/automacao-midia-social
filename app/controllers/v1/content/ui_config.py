@@ -280,14 +280,17 @@ def create_social_account(
     user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
 ):
     content_auth.require_role(user_session, "admin")
-    account = social_accounts_service.create_social_account(
-        session,
-        tenant_id=user_session.tenant.id,
-        client_id=payload.client_id,
-        platform=payload.platform,
-        external_account_id=payload.external_account_id,
-        credentials=payload.credentials,
-    )
+    try:
+        account = social_accounts_service.create_social_account(
+            session,
+            tenant_id=user_session.tenant.id,
+            client_id=payload.client_id,
+            platform=payload.platform,
+            external_account_id=payload.external_account_id,
+            credentials=payload.credentials,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
     if account is None:
         raise HTTPException(status_code=404, detail="Client not found")
     audit.write_audit_log(
@@ -309,13 +312,16 @@ def update_social_account(
     user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
 ):
     content_auth.require_role(user_session, "admin")
-    account = social_accounts_service.update_social_account(
-        session,
-        tenant_id=user_session.tenant.id,
-        account_id=account_id,
-        external_account_id=payload.external_account_id,
-        credentials=payload.credentials,
-    )
+    try:
+        account = social_accounts_service.update_social_account(
+            session,
+            tenant_id=user_session.tenant.id,
+            account_id=account_id,
+            external_account_id=payload.external_account_id,
+            credentials=payload.credentials,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
     if account is None:
         raise HTTPException(status_code=404, detail="Social account not found")
     audit.write_audit_log(

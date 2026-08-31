@@ -217,5 +217,44 @@ class TestTemplateAvatarCrossTenantRejected(UIConfigTestCase):
         self.assertEqual(response.status_code, 422)
 
 
+class TestSocialAccountExternalIdValidation(UIConfigTestCase):
+    role = "admin"
+
+    def test_create_rejects_facebook_page_id_mismatch(self):
+        with patch(
+            "app.services.content.social_accounts.get_client", return_value=MagicMock()
+        ):
+            response = self.client.post(
+                "/api/v1/content/ui/config/social-accounts",
+                json={
+                    "client_id": 1,
+                    "platform": "facebook",
+                    "external_account_id": "123",
+                    "credentials": '{"access_token": "t", "page_id": "999"}',
+                },
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_update_rejects_instagram_ig_user_id_mismatch(self):
+        account = ContentSocialAccount(
+            id=1,
+            client_id=1,
+            platform="instagram",
+            external_account_id="abc",
+            credentials_encrypted="old-enc",
+            status="active",
+        )
+        with patch(
+            "app.services.content.social_accounts.get_social_account", return_value=account
+        ):
+            response = self.client.put(
+                "/api/v1/content/ui/config/social-accounts/1",
+                json={"credentials": '{"access_token": "t", "ig_user_id": "other"}'},
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()

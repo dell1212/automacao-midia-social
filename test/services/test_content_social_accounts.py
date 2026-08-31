@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import MagicMock
 
@@ -27,10 +28,88 @@ class TestGetSocialAccount(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class TestCreateSocialAccount(unittest.TestCase):
+    def test_rejects_facebook_page_id_mismatch(self):
+        session = MagicMock()
+        session.exec.return_value.first.return_value = MagicMock()  # client exists
+
+        with self.assertRaises(ValueError):
+            social_accounts_service.create_social_account(
+                session,
+                tenant_id=1,
+                client_id=1,
+                platform="facebook",
+                external_account_id="123",
+                credentials=json.dumps({"access_token": "t", "page_id": "999"}),
+            )
+
+    def test_accepts_matching_facebook_page_id(self):
+        session = MagicMock()
+        session.exec.return_value.first.return_value = MagicMock()
+
+        result = social_accounts_service.create_social_account(
+            session,
+            tenant_id=1,
+            client_id=1,
+            platform="facebook",
+            external_account_id="123",
+            credentials=json.dumps({"access_token": "t", "page_id": "123"}),
+        )
+
+        self.assertEqual(result.external_account_id, "123")
+
+    def test_skips_validation_for_platform_without_credential_id(self):
+        session = MagicMock()
+        session.exec.return_value.first.return_value = MagicMock()
+
+        result = social_accounts_service.create_social_account(
+            session,
+            tenant_id=1,
+            client_id=1,
+            platform="tiktok",
+            external_account_id="anything",
+            credentials=json.dumps({"access_token": "t"}),
+        )
+
+        self.assertEqual(result.external_account_id, "anything")
+
+
 class TestUpdateSocialAccount(unittest.TestCase):
+    def test_rejects_instagram_ig_user_id_mismatch_on_credentials_update(self):
+        account = ContentSocialAccount(
+            id=1, client_id=1, platform="instagram", external_account_id="abc",
+            credentials_encrypted="old-enc", status="active",
+        )
+        session = MagicMock()
+        session.exec.return_value.first.return_value = account
+
+        with self.assertRaises(ValueError):
+            social_accounts_service.update_social_account(
+                session,
+                tenant_id=1,
+                account_id=1,
+                credentials=json.dumps({"access_token": "t", "ig_user_id": "other"}),
+            )
+
+    def test_rejects_mismatch_when_only_external_account_id_changes(self):
+        account = ContentSocialAccount(
+            id=1, client_id=1, platform="instagram", external_account_id="abc",
+            credentials_encrypted=social_accounts_service.encrypt_credentials(
+                json.dumps({"access_token": "t", "ig_user_id": "abc"})
+            ),
+            status="active",
+        )
+        session = MagicMock()
+        session.exec.return_value.first.return_value = account
+
+        with self.assertRaises(ValueError):
+            social_accounts_service.update_social_account(
+                session, tenant_id=1, account_id=1, external_account_id="different"
+            )
+
     def test_updates_external_id_and_reencrypts_credentials(self):
         account = ContentSocialAccount(
-            id=1, client_id=1, platform="instagram", external_account_id="old",
+            id=1, client_id=1, platform="youtube", external_account_id="old",
             credentials_encrypted="old-enc", status="active",
         )
         session = MagicMock()
