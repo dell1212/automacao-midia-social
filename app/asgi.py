@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import Scope
 
 from app.config import config
 from app.controllers import base
@@ -70,6 +72,25 @@ async def application_lifespan(_: FastAPI):
         shutdown_executors()
         logger.info("content generation executors shut down")
         logger.info("shutdown event")
+
+
+class SPAStaticFiles(StaticFiles):
+    """Falls back to index.html for any path this directory can't resolve.
+
+    webui/ is a client-side-routed SPA (React Router): a direct request or
+    page refresh on a deep route like /pieces/10 has no matching file here,
+    only a route the JS bundle defines once it loads. Without this, that
+    request 404s instead of ever reaching the router — self-only mount, the
+    plain StaticFiles on /tasks keeps its real 404s untouched.
+    """
+
+    async def get_response(self, path: str, scope: Scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
 
 
 def exception_handler(request: Request, e: HttpException):
@@ -154,4 +175,4 @@ task_dir = utils.task_dir()
 app.mount("/tasks", StaticFiles(directory=task_dir, html=True), name="")
 
 public_dir = utils.public_dir()
-app.mount("/", StaticFiles(directory=public_dir, html=True), name="")
+app.mount("/", SPAStaticFiles(directory=public_dir, html=True), name="")

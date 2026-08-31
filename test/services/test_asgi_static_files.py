@@ -109,5 +109,60 @@ class TestTaskStaticFiles(unittest.TestCase):
         self.assertNotIn(b"must not be served", response.content)
 
 
+class TestSPAFallback(unittest.TestCase):
+    def setUp(self):
+        self.original_app_config = dict(config.app)
+        config.app["api_key"] = ""
+        self.client = TestClient(asgi.app)
+        self.public_dir = Path(utils.public_dir())
+
+    def tearDown(self):
+        config.app.clear()
+        config.app.update(self.original_app_config)
+
+    def test_unknown_deep_route_falls_back_to_the_spa_shell(self):
+        """A client-side route like /pieces/10 has no file of its own — only
+        the JS bundle knows about it once index.html has loaded and React
+        Router takes over. Without the fallback this 404s instead.
+        """
+        index_path = self.public_dir / "index.html"
+        already_existed = index_path.exists()
+        original = index_path.read_bytes() if already_existed else None
+        index_path.write_text("<html>spa shell</html>", encoding="utf-8")
+        try:
+            response = self.client.get("/pieces/10")
+        finally:
+            if already_existed:
+                index_path.write_bytes(original)
+            else:
+                index_path.unlink()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spa shell", response.text)
+
+    def test_real_static_asset_is_still_served_as_itself(self):
+        """The fallback must not swallow an actual file into the SPA shell —
+        only paths with nothing on disk should redirect to index.html.
+        """
+        asset_path = self.public_dir / "spa-fallback-probe.txt"
+        asset_path.write_text("real asset content", encoding="utf-8")
+        try:
+            response = self.client.get("/spa-fallback-probe.txt")
+        finally:
+            asset_path.unlink()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.text, "real asset content")
+
+    def test_missing_task_file_still_404s_without_the_spa_fallback(self):
+        """The fallback is mounted only on "/" — /tasks keeps returning a
+        real 404 for a file that doesn't exist, not the SPA shell.
+        """
+        response = self.client.get("/tasks/does-not-exist/artifact.txt")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertNotIn(b"spa shell", response.content)
+
+
 if __name__ == "__main__":
     unittest.main()
