@@ -42,22 +42,24 @@ def _bucket() -> str:
 def upload_bytes(
     *,
     tenant_id: int,
-    content_piece_id: int,
+    path_prefix: str,
     filename: str,
     data: bytes,
     content_type: str,
 ) -> UploadedObject:
-    """Upload one generated artifact and return its public URL.
+    """Upload one file and return its public URL.
 
     The path is prefixed by tenant so a future storage-level policy can scope
-    access per tenant without moving objects around.
+    access per tenant without moving objects around. `path_prefix` groups
+    objects under the tenant (a content piece id for generated artifacts,
+    "avatars" for avatar reference images, etc).
     """
     base_url = _require_env(_SUPABASE_URL_ENV).rstrip("/")
     service_key = _require_env(_SUPABASE_SERVICE_KEY_ENV)
     bucket = _bucket()
 
     safe_name = os.path.basename(filename).replace(" ", "-")
-    storage_path = f"{tenant_id}/{content_piece_id}/{uuid4().hex}-{safe_name}"
+    storage_path = f"{tenant_id}/{path_prefix}/{uuid4().hex}-{safe_name}"
     endpoint = f"{base_url}/storage/v1/object/{bucket}/{storage_path}"
 
     try:

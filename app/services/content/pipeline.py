@@ -432,7 +432,7 @@ def _normalized_base_image(
     try:
         uploaded = upload_bytes(
             tenant_id=tenant_id,
-            content_piece_id=piece.id,
+            path_prefix=str(piece.id),
             filename="base-normalized.png",
             data=data,
             content_type="image/png",
@@ -476,7 +476,7 @@ def _compose_with_narration(
     try:
         composed_upload = upload_bytes(
             tenant_id=tenant_id,
-            content_piece_id=piece.id,
+            path_prefix=str(piece.id),
             filename="composed.mp4",
             data=composed,
             content_type="video/mp4",

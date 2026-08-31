@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
@@ -167,6 +167,8 @@ class ContentApprovalRule(SQLModel, table=True):
     action: ApprovalAction = Field(
         sa_column=Column(SAEnum(ApprovalAction, name="content_approval_action"))
     )
+    # Lower wins — first match checked in ascending order (same convention as
+    # ContentGenerationProvider.priority).
     priority: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -311,7 +313,7 @@ class ApprovalRuleUpdate(BaseModel):
 class GenerationTemplateCreate(BaseModel):
     campaign_id: int
     type: ContentPieceType
-    generation_prompt: Optional[str] = None
+    generation_prompt: str
     avatar_id: Optional[int] = None
     voice_id: Optional[str] = None
     is_synthetic_media: bool = False
@@ -319,6 +321,14 @@ class GenerationTemplateCreate(BaseModel):
     aspect_ratio: str = "9:16"
     resolution: Optional[str] = None
     duration: Optional[int] = None
+
+    @field_validator("generation_prompt")
+    @classmethod
+    def _prompt_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("generation_prompt must not be blank")
+        return stripped
 
 
 class GenerationTemplateRead(BaseModel):

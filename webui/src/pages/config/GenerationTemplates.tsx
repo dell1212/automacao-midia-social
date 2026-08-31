@@ -4,14 +4,19 @@ import { apiClient } from "../../lib/apiClient";
 import { RequireRole } from "../../components/RequireRole";
 import type { Avatar, Campaign, GenerationTemplate } from "../../lib/types";
 
+const ASPECT_RATIO_PRESETS = ["9:16", "16:9", "1:1", "4:5"];
+
 export function GenerationTemplates() {
   const queryClient = useQueryClient();
   const [campaignId, setCampaignId] = useState<number | null>(null);
   const [type, setType] = useState<"video" | "image" | "audio">("image");
   const [generationPrompt, setGenerationPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("9:16");
+  const [customAspectRatio, setCustomAspectRatio] = useState("");
   const [avatarId, setAvatarId] = useState<number | null>(null);
   const [voiceId, setVoiceId] = useState("");
+
+  const effectiveAspectRatio = aspectRatio === "custom" ? customAspectRatio : aspectRatio;
 
   const campaigns = useQuery({
     queryKey: ["config", "campaigns"],
@@ -43,7 +48,7 @@ export function GenerationTemplates() {
           type,
           generation_prompt: generationPrompt,
           is_synthetic_media: false,
-          aspect_ratio: aspectRatio,
+          aspect_ratio: effectiveAspectRatio,
           avatar_id: avatarId,
           voice_id: voiceId || null,
         }
@@ -52,6 +57,8 @@ export function GenerationTemplates() {
       setGenerationPrompt("");
       setAvatarId(null);
       setVoiceId("");
+      setAspectRatio("9:16");
+      setCustomAspectRatio("");
       queryClient.invalidateQueries({ queryKey: ["config", "templates", campaignId] });
     },
   });
@@ -103,41 +110,84 @@ export function GenerationTemplates() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (campaignId !== null) create.mutate();
+            if (campaignId !== null && generationPrompt.trim() && effectiveAspectRatio.trim()) {
+              create.mutate();
+            }
           }}
         >
-          <select value={type} onChange={(event) => setType(event.target.value as typeof type)}>
-            <option value="image">Imagem</option>
-            <option value="video">Vídeo</option>
-            <option value="audio">Áudio</option>
-          </select>
-          <input
-            value={generationPrompt}
-            onChange={(event) => setGenerationPrompt(event.target.value)}
-            placeholder="Prompt de geração"
-          />
-          <input
-            value={aspectRatio}
-            onChange={(event) => setAspectRatio(event.target.value)}
-            placeholder="Aspect ratio (ex: 9:16)"
-          />
-          <select
-            value={avatarId ?? ""}
-            onChange={(event) => setAvatarId(Number(event.target.value) || null)}
+          <label>
+            Tipo
+            <select value={type} onChange={(event) => setType(event.target.value as typeof type)}>
+              <option value="image">Imagem</option>
+              <option value="video">Vídeo</option>
+              <option value="audio">Áudio</option>
+            </select>
+          </label>
+          <label>
+            Prompt de geração
+            <input
+              value={generationPrompt}
+              onChange={(event) => setGenerationPrompt(event.target.value)}
+              placeholder="Prompt de geração"
+              required
+            />
+          </label>
+          <label>
+            Aspect ratio
+            <select
+              value={aspectRatio}
+              onChange={(event) => setAspectRatio(event.target.value)}
+            >
+              {ASPECT_RATIO_PRESETS.map((preset) => (
+                <option key={preset} value={preset}>
+                  {preset}
+                </option>
+              ))}
+              <option value="custom">Custom…</option>
+            </select>
+          </label>
+          {aspectRatio === "custom" && (
+            <label>
+              Aspect ratio customizado
+              <input
+                value={customAspectRatio}
+                onChange={(event) => setCustomAspectRatio(event.target.value)}
+                placeholder="ex: 21:9"
+                required
+              />
+            </label>
+          )}
+          <label>
+            Avatar
+            <select
+              value={avatarId ?? ""}
+              onChange={(event) => setAvatarId(Number(event.target.value) || null)}
+            >
+              <option value="">Sem avatar</option>
+              {avatars.data?.map((avatar) => (
+                <option key={avatar.id} value={avatar.id}>
+                  {avatar.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Voice ID (opcional)
+            <input
+              value={voiceId}
+              onChange={(event) => setVoiceId(event.target.value)}
+              placeholder="ID da voz no provider, para narração em áudio/vídeo"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={
+              create.isPending ||
+              campaignId === null ||
+              !generationPrompt.trim() ||
+              !effectiveAspectRatio.trim()
+            }
           >
-            <option value="">Sem avatar</option>
-            {avatars.data?.map((avatar) => (
-              <option key={avatar.id} value={avatar.id}>
-                {avatar.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={voiceId}
-            onChange={(event) => setVoiceId(event.target.value)}
-            placeholder="Voice ID (opcional)"
-          />
-          <button type="submit" disabled={create.isPending || campaignId === null}>
             Criar template
           </button>
         </form>

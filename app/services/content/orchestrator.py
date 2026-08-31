@@ -164,7 +164,7 @@ def run_job(
         try:
             uploaded = upload_bytes(
                 tenant_id=job.tenant_id,
-                content_piece_id=job.content_piece_id,
+                path_prefix=str(job.content_piece_id),
                 filename=generated.filename,
                 data=generated.data,
                 content_type=generated.mime_type,

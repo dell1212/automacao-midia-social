@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
 
 from app.controllers import content_auth
@@ -24,7 +24,6 @@ from app.models.content import (
     SocialAccountUpdate,
 )
 from app.models.content_generation import (
-    AvatarCreate,
     AvatarRead,
     AvatarUpdate,
     GenerationKind,
@@ -38,6 +37,7 @@ from app.services.content import avatars as avatars_service
 from app.services.content import campaigns as campaigns_service
 from app.services.content import clients as clients_service
 from app.services.content import generation_providers as providers_service
+from app.services.content import storage
 from app.services.content import generation_templates as templates_service
 from app.services.content import providers as provider_adapters
 from app.services.content import social_accounts as social_accounts_service
@@ -378,20 +378,32 @@ def get_avatar(
 
 
 @router.post("/content/ui/config/avatars", response_model=AvatarRead, status_code=201)
-def create_avatar(
-    payload: AvatarCreate,
+async def create_avatar(
+    client_id: int = Form(...),
+    name: str = Form(...),
+    voice_provider: Optional[str] = Form(None),
+    voice_id: Optional[str] = Form(None),
+    file: UploadFile = File(...),
     session: Session = Depends(get_session),
     user_session: content_auth.UserSession = Depends(content_auth.verify_user_session),
 ):
     content_auth.require_role(user_session, "admin")
+    data = await file.read()
+    uploaded = storage.upload_bytes(
+        tenant_id=user_session.tenant.id,
+        path_prefix="avatars",
+        filename=file.filename or "avatar",
+        data=data,
+        content_type=file.content_type or "application/octet-stream",
+    )
     avatar = avatars_service.create_avatar(
         session,
         tenant_id=user_session.tenant.id,
-        client_id=payload.client_id,
-        name=payload.name,
-        reference_image_url=payload.reference_image_url,
-        voice_provider=payload.voice_provider,
-        voice_id=payload.voice_id,
+        client_id=client_id,
+        name=name,
+        reference_image_url=uploaded.url,
+        voice_provider=voice_provider,
+        voice_id=voice_id,
     )
     if avatar is None:
         raise HTTPException(status_code=404, detail="Client not found")

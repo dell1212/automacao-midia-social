@@ -2,13 +2,15 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../lib/apiClient";
 import { RequireRole } from "../../components/RequireRole";
-import type { Avatar, AvatarPayload, Client } from "../../lib/types";
+import type { Avatar, Client } from "../../lib/types";
 
 export function Avatars() {
   const queryClient = useQueryClient();
   const [clientId, setClientId] = useState<number | null>(null);
   const [name, setName] = useState("");
-  const [referenceImageUrl, setReferenceImageUrl] = useState("");
+  const [voiceProvider, setVoiceProvider] = useState("");
+  const [voiceId, setVoiceId] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
 
   const clients = useQuery({
     queryKey: ["config", "clients"],
@@ -22,11 +24,12 @@ export function Avatars() {
   });
 
   const create = useMutation({
-    mutationFn: (payload: AvatarPayload) =>
-      apiClient.post<Avatar>("/content/ui/config/avatars", payload),
+    mutationFn: (formData: FormData) => apiClient.uploadFile<Avatar>("/content/ui/config/avatars", formData),
     onSuccess: () => {
       setName("");
-      setReferenceImageUrl("");
+      setVoiceProvider("");
+      setVoiceId("");
+      setImageFile(null);
       queryClient.invalidateQueries({ queryKey: ["config", "avatars", clientId] });
     },
   });
@@ -75,23 +78,51 @@ export function Avatars() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (clientId === null) return;
-            create.mutate({ client_id: clientId, name, reference_image_url: referenceImageUrl });
+            if (clientId === null || !imageFile) return;
+            const formData = new FormData();
+            formData.append("client_id", String(clientId));
+            formData.append("name", name);
+            if (voiceProvider) formData.append("voice_provider", voiceProvider);
+            if (voiceId) formData.append("voice_id", voiceId);
+            formData.append("file", imageFile);
+            create.mutate(formData);
           }}
         >
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Nome do avatar"
-            required
-          />
-          <input
-            value={referenceImageUrl}
-            onChange={(event) => setReferenceImageUrl(event.target.value)}
-            placeholder="URL da imagem de referência"
-            required
-          />
-          <button type="submit" disabled={create.isPending || clientId === null}>
+          <label>
+            Nome
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Nome do avatar"
+              required
+            />
+          </label>
+          <label>
+            Imagem de referência
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
+              required
+            />
+          </label>
+          <label>
+            Provider de voz (opcional)
+            <input
+              value={voiceProvider}
+              onChange={(event) => setVoiceProvider(event.target.value)}
+              placeholder="ex: elevenlabs"
+            />
+          </label>
+          <label>
+            Voice ID (opcional)
+            <input
+              value={voiceId}
+              onChange={(event) => setVoiceId(event.target.value)}
+              placeholder="ID da voz no provider"
+            />
+          </label>
+          <button type="submit" disabled={create.isPending || clientId === null || !imageFile}>
             Criar
           </button>
         </form>
