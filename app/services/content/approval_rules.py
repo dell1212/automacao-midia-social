@@ -35,7 +35,7 @@ def list_approval_rules(
         session.exec(
             select(ContentApprovalRule)
             .where(ContentApprovalRule.campaign_id == campaign_id)
-            .order_by(ContentApprovalRule.priority.desc())
+            .order_by(ContentApprovalRule.priority.asc())
         ).all()
     )
 

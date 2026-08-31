@@ -49,18 +49,28 @@ export function ApprovalRules() {
   return (
     <div>
       <h1>Approval Rules</h1>
+      <p>
+        Por campanha, cada peça gerada é checada contra as regras abaixo em ordem de
+        prioridade (número menor primeiro). A primeira regra cuja condição bater decide se a
+        peça é aprovada automaticamente ou exige revisão humana. Uma regra sem condição
+        (<code>{"{}"}</code>) bate com qualquer peça — útil como regra padrão de menor
+        prioridade (número mais alto).
+      </p>
 
-      <select
-        value={campaignId ?? ""}
-        onChange={(event) => setCampaignId(Number(event.target.value) || null)}
-      >
-        <option value="">Selecione uma campanha</option>
-        {campaigns.data?.map((campaign) => (
-          <option key={campaign.id} value={campaign.id}>
-            {campaign.name}
-          </option>
-        ))}
-      </select>
+      <label>
+        Campanha
+        <select
+          value={campaignId ?? ""}
+          onChange={(event) => setCampaignId(Number(event.target.value) || null)}
+        >
+          <option value="">Selecione uma campanha</option>
+          {campaigns.data?.map((campaign) => (
+            <option key={campaign.id} value={campaign.id}>
+              {campaign.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {rules.isLoading && <p>Carregando...</p>}
       {rules.isError && <p>Erro ao carregar. Tente novamente.</p>}
@@ -92,23 +102,33 @@ export function ApprovalRules() {
             }
           }}
         >
-          <select
-            value={action}
-            onChange={(event) => setAction(event.target.value as "auto_approve" | "require_review")}
-          >
-            <option value="require_review">Requer revisão</option>
-            <option value="auto_approve">Aprovação automática</option>
-          </select>
-          <input
-            type="number"
-            value={priority}
-            onChange={(event) => setPriority(Number(event.target.value))}
-          />
-          <textarea
-            value={conditionJson}
-            onChange={(event) => setConditionJson(event.target.value)}
-            placeholder='Condição em JSON, ex: {"content_category": "medical"}'
-          />
+          <label>
+            Ação
+            <select
+              value={action}
+              onChange={(event) => setAction(event.target.value as "auto_approve" | "require_review")}
+            >
+              <option value="require_review">Requer revisão</option>
+              <option value="auto_approve">Aprovação automática</option>
+            </select>
+          </label>
+          <label>
+            Prioridade
+            <input
+              type="number"
+              value={priority}
+              onChange={(event) => setPriority(Number(event.target.value))}
+              title="Número menor é checado primeiro"
+            />
+          </label>
+          <label>
+            Condição (JSON)
+            <textarea
+              value={conditionJson}
+              onChange={(event) => setConditionJson(event.target.value)}
+              placeholder='Chaves aceitas: content_category, risk_level. Cada valor é uma lista, ex: {"risk_level": ["high", "medium"]}'
+            />
+          </label>
           {conditionError && <p>{conditionError}</p>}
           <button type="submit" disabled={create.isPending || campaignId === null}>
             Criar regra
