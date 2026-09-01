@@ -1,6 +1,7 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Optional
 
 import requests
 
@@ -25,7 +26,9 @@ _POLICY_KEYWORDS = (
 @dataclass(frozen=True)
 class PublishResult:
     platform_post_id: str
-    platform_post_url: str
+    # None when the platform's status API never returns a public URL (e.g.
+    # TikTok — only a post id, no link) — left unset rather than fabricated.
+    platform_post_url: Optional[str] = None
 
 
 class PublisherAdapter(ABC):
@@ -113,6 +116,15 @@ def post_json(url: str, json_body: dict, *, headers: dict, timeout=(10, 60)):
         raise PublicationError(PublicationErrorCode.transient, str(exc)) from exc
     raise_for_response(response)
     return response
+
+
+def get_json(url: str, *, params=None, headers=None, timeout=(10, 60)) -> dict:
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=timeout)
+    except requests.RequestException as exc:
+        raise PublicationError(PublicationErrorCode.transient, str(exc)) from exc
+    raise_for_response(response)
+    return response.json()
 
 
 def get_bytes(url: str, *, timeout=(10, 120)) -> bytes:

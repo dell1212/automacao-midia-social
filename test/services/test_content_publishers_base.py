@@ -108,6 +108,39 @@ class TestPostForm(unittest.TestCase):
         self.assertIs(result, ok_response)
 
 
+class TestGetJson(unittest.TestCase):
+    def test_returns_parsed_json_body(self):
+        response = MagicMock(status_code=200)
+        response.json.return_value = {"status_code": "FINISHED"}
+
+        with patch.object(base.requests, "get", return_value=response) as get:
+            result = base.get_json(
+                "https://api.example.com/container-1", params={"fields": "status_code"}
+            )
+
+        self.assertEqual(result, {"status_code": "FINISHED"})
+        self.assertEqual(get.call_args.kwargs["params"], {"fields": "status_code"})
+
+    def test_network_error_is_classified_as_transient(self):
+        with patch.object(
+            base.requests, "get", side_effect=requests.ConnectionError("boom")
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                base.get_json("https://api.example.com/container-1")
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.transient)
+
+    def test_error_status_raises_publication_error(self):
+        response = MagicMock(status_code=400)
+        response.json.return_value = {"error": {"message": "bad request"}}
+
+        with patch.object(base.requests, "get", return_value=response):
+            with self.assertRaises(PublicationError) as ctx:
+                base.get_json("https://api.example.com/container-1")
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.invalid_params)
+
+
 class TestGetBytes(unittest.TestCase):
     def test_404_response_classifies_as_invalid_params(self):
         response = MagicMock(status_code=404)
