@@ -13,12 +13,15 @@ def create_client(session: Session, *, tenant_id: int, name: str) -> ContentClie
     return client
 
 
-def list_clients(session: Session, *, tenant_id: int) -> List[ContentClient]:
-    return list(
-        session.exec(
-            select(ContentClient).where(ContentClient.tenant_id == tenant_id)
-        ).all()
-    )
+def list_clients(
+    session: Session, *, tenant_id: int, include_inactive: bool = False
+) -> List[ContentClient]:
+    statement = select(ContentClient).where(ContentClient.tenant_id == tenant_id)
+    if not include_inactive:
+        # DELETE is a soft delete (is_active=False); without this, a "deleted"
+        # client keeps showing up in every list and picker that calls this.
+        statement = statement.where(ContentClient.is_active == True)  # noqa: E712
+    return list(session.exec(statement).all())
 
 
 def get_client(session: Session, *, tenant_id: int, client_id: int) -> Optional[ContentClient]:

@@ -28,14 +28,15 @@ class YouTubeAdapter(PublisherAdapter):
                 "YouTube only accepts video pieces",
             )
 
-    def publish(self, piece, asset, account, credentials) -> PublishResult:
+    def publish(self, piece, asset, account, credentials, caption="") -> PublishResult:
         access_token = credentials["access_token"]
         video_bytes = get_bytes(asset.url)
 
         metadata = {
             "snippet": {
-                "title": (piece.generation_prompt or f"Content piece {piece.id}")[:100],
-                "description": piece.generation_prompt or "",
+                # YouTube needs a separate short title; the caption is the body.
+                "title": (caption or f"Content piece {piece.id}").splitlines()[0][:100],
+                "description": caption,
             },
             "status": {"privacyStatus": "public"},
         }

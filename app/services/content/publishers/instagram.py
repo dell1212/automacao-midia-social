@@ -27,12 +27,16 @@ class InstagramAdapter(PublisherAdapter):
                 "Instagram only accepts image or video pieces",
             )
 
-    def publish(self, piece, asset, account, credentials) -> PublishResult:
+    def publish(self, piece, asset, account, credentials, caption="") -> PublishResult:
         access_token = credentials["access_token"]
         ig_user_id = credentials["ig_user_id"]
 
         media_field = "video_url" if piece.type == ContentPieceType.video else "image_url"
         container_payload = {media_field: asset.url, "access_token": access_token}
+        # Instagram posts used to go out with no text at all: this adapter
+        # never sent a caption field.
+        if caption:
+            container_payload["caption"] = caption
         if piece.type == ContentPieceType.video:
             container_payload["media_type"] = "REELS"
 

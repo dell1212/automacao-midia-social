@@ -40,14 +40,19 @@ def get_campaign(
     ).first()
 
 
-def list_campaigns_for_tenant(session: Session, *, tenant_id: int) -> List[ContentCampaign]:
-    return list(
-        session.exec(
-            select(ContentCampaign)
-            .join(ContentClient, ContentClient.id == ContentCampaign.client_id)
-            .where(ContentClient.tenant_id == tenant_id)
-        ).all()
+def list_campaigns_for_tenant(
+    session: Session, *, tenant_id: int, include_inactive: bool = False
+) -> List[ContentCampaign]:
+    statement = (
+        select(ContentCampaign)
+        .join(ContentClient, ContentClient.id == ContentCampaign.client_id)
+        .where(ContentClient.tenant_id == tenant_id)
     )
+    if not include_inactive:
+        # DELETE archives rather than removing; excluding the tombstone value
+        # (instead of matching == "active") keeps any future status visible.
+        statement = statement.where(ContentCampaign.status != "archived")
+    return list(session.exec(statement).all())
 
 
 def update_campaign(

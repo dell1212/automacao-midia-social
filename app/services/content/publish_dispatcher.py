@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from app.db import get_engine
 from app.models.content import ContentPiece, ContentPieceStatus, ContentSocialAccount
 from app.models.content_publishing import ContentSocialPublication, PublicationStatus
+from app.services.content import captions
 from app.services.content import retry
 from app.services.content.publish_errors import PublicationError, PublicationErrorCode, is_retryable
 from app.services.content.publications import get_final_asset
@@ -292,6 +293,19 @@ def execute_claimed_publication(session: Session, publication_id: int) -> None:
             )
         adapter = get_adapter(row.platform)
         credentials = load_credentials(account)
+        # Resolved while the session is still open, before the commit below
+        # closes the read transaction for the network call.
+        resolved = captions.resolve_for_platform(session, piece=piece, platform=row.platform)
+        caption = resolved.rendered(platform=row.platform)
+        # Snapshot what was actually published, next to the payload the row
+        # already carries: editing the caption later must not rewrite the
+        # record of what went out.
+        row.request_payload = {
+            **(row.request_payload or {}),
+            "caption": caption,
+            "caption_source": resolved.source,
+        }
+        session.add(row)
     except PublicationError as error:
         _handle_failure(session, row, piece, error, claimed_attempt_count)
         return
@@ -323,7 +337,7 @@ def execute_claimed_publication(session: Session, publication_id: int) -> None:
     semaphore = _platform_semaphore(row.platform)
     semaphore.acquire()
     try:
-        result = adapter.publish(piece, asset, account, credentials)
+        result = adapter.publish(piece, asset, account, credentials, caption)
     except PublicationError as error:
         _handle_failure(session, row, piece, error, claimed_attempt_count)
         return

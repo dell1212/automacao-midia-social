@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import List, Optional
 
@@ -79,7 +79,7 @@ def required_kinds_for(payload) -> List[GenerationKind]:
     return kinds
 
 
-def create_piece(session: Session, *, payload) -> tuple[ContentPiece, bool]:
+def create_piece(session: Session, *, tenant_id: int, payload) -> tuple[ContentPiece, bool]:
     """Create a piece and kick off its generation.
 
     Returns (piece, created). `created` is False when the idempotency key
@@ -293,6 +293,72 @@ def update_piece(
         return None
     session.refresh(piece)
     return piece, diff
+
+
+class RescheduleOutcome(str, Enum):
+    ok = "ok"
+    not_found = "not_found"
+    # A publication row already exists, so the publish pipeline owns this piece
+    # now and `scheduled_for` no longer decides anything — Pass 3 excludes any
+    # piece that has ever been dispatched.
+    locked = "locked"
+    in_past = "in_past"
+
+
+def reschedule_piece(
+    session: Session,
+    *,
+    tenant_id: int,
+    piece_id: int,
+    scheduled_for: Optional[datetime],
+    has_publications: bool,
+) -> tuple[RescheduleOutcome, Optional[ContentPiece], dict]:
+    """Move (or clear) a piece's schedule WITHOUT touching its approval.
+
+    Deliberately separate from update_piece. That path runs
+    `_status_reset_for_edit`, which sends an approved piece back to
+    pending_approval on any change — correct for editing a prompt, wrong for
+    dragging a card on a calendar, since Pass 3 only dispatches `approved` and
+    the piece would silently leave the queue.
+
+    Unlike update_piece, an explicit None here means "unschedule" rather than
+    "leave unchanged"; the caller decides which by inspecting the request body.
+    """
+    piece = get_piece(session, tenant_id=tenant_id, piece_id=piece_id)
+    if piece is None:
+        return RescheduleOutcome.not_found, None, {}
+
+    if piece.status == ContentPieceStatus.posted or has_publications:
+        return RescheduleOutcome.locked, piece, {}
+
+    # Only guard the approved case: an approved piece dated in the past is
+    # picked up by the very next scheduler tick, which is not what dropping a
+    # card on a past day means. Backdating a draft harms nothing.
+    if (
+        scheduled_for is not None
+        and piece.status == ContentPieceStatus.approved
+        and scheduled_for < datetime.utcnow() - timedelta(seconds=60)
+    ):
+        return RescheduleOutcome.in_past, piece, {}
+
+    if piece.scheduled_for == scheduled_for:
+        return RescheduleOutcome.ok, piece, {}
+
+    diff = {
+        "scheduled_for": {
+            "before": _serialize_for_log(piece.scheduled_for),
+            "after": _serialize_for_log(scheduled_for),
+        }
+    }
+    applied = _conditional_edit(
+        session,
+        piece_id=piece_id,
+        values={"scheduled_for": scheduled_for, "updated_at": datetime.utcnow()},
+    )
+    if not applied:
+        return RescheduleOutcome.locked, piece, {}
+    session.refresh(piece)
+    return RescheduleOutcome.ok, piece, diff
 
 
 def mark_asset_replaced(

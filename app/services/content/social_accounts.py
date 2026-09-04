@@ -52,17 +52,18 @@ def create_social_account(
 
 
 def list_social_accounts(
-    session: Session, *, tenant_id: int, client_id: int
+    session: Session, *, tenant_id: int, client_id: int, include_inactive: bool = False
 ) -> List[ContentSocialAccount]:
     if get_client(session, tenant_id=tenant_id, client_id=client_id) is None:
         return []
-    return list(
-        session.exec(
-            select(ContentSocialAccount).where(
-                ContentSocialAccount.client_id == client_id
-            )
-        ).all()
+    statement = select(ContentSocialAccount).where(
+        ContentSocialAccount.client_id == client_id
     )
+    if not include_inactive:
+        # DELETE revokes rather than removing. The publish dispatcher runs its
+        # own query, so this only narrows what the API and pickers show.
+        statement = statement.where(ContentSocialAccount.status != "revoked")
+    return list(session.exec(statement).all())
 
 
 def get_social_account(

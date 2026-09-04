@@ -44,18 +44,26 @@ def create_template(
 
 
 def list_templates(
-    session: Session, *, tenant_id: int, campaign_id: int
+    session: Session, *, tenant_id: int, campaign_id: int, include_inactive: bool = False
 ) -> List[ContentGenerationTemplate]:
     if get_campaign(session, tenant_id=tenant_id, campaign_id=campaign_id) is None:
         return []
+    statement = select(ContentGenerationTemplate).where(
+        ContentGenerationTemplate.campaign_id == campaign_id
+    )
+    if not include_inactive:
+        # The scheduler rotates over this list to decide what to generate next,
+        # so an unfiltered list means a template "deleted" through the UI keeps
+        # producing pieces forever.
+        statement = statement.where(
+            ContentGenerationTemplate.is_active == True  # noqa: E712
+        )
     return list(
         session.exec(
-            select(ContentGenerationTemplate)
-            .where(ContentGenerationTemplate.campaign_id == campaign_id)
             # pick_template_index rotates by position, so the rotation is only
             # deterministic if the row order is stable across calls — without
             # an ORDER BY, Postgres is free to return them in any order.
-            .order_by(ContentGenerationTemplate.id)
+            statement.order_by(ContentGenerationTemplate.id)
         ).all()
     )
 

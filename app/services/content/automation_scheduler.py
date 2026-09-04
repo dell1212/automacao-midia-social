@@ -22,12 +22,14 @@ from app.models.content import (
     EntitlementStatus,
     RiskLevel,
 )
-from app.models.content_publishing import ContentSocialPublication
+from app.models.content_publishing import ContentSocialPublication, PublicationStatus
 from app.services.content import approval_rules as approval_rules_service
 from app.services.content import audit
 from app.services.content import generation_templates as templates_service
 from app.services.content import pieces as pieces_service
+from app.services.content import publish_dispatcher
 from app.services.content import publications as publications_service
+from app.services.content import targets as targets_service
 
 TICK_SECONDS = float(os.environ.get("CONTENT_AUTOMATION_TICK_SECONDS", 300))
 _BATCH_LIMIT = int(os.environ.get("CONTENT_AUTOMATION_BATCH_SIZE", 50))
@@ -131,7 +133,9 @@ def _fill_campaign_calendars(session: Session, *, batch_limit: int) -> None:
                 duration=template.duration,
             )
             try:
-                piece, created = pieces_service.create_piece(session, payload=piece_create)
+                piece, created = pieces_service.create_piece(
+                    session, tenant_id=tenant.id, payload=piece_create
+                )
             except IntegrityError:
                 # Outra réplica já criou a piece para este campaign_id + slot
                 # (mesma UniqueConstraint que resolve_publication_request usa na
@@ -338,12 +342,10 @@ def _dispatch_scheduled_publications(session: Session, *, batch_limit: int) -> N
             if tenant is None or tenant.entitlement_status != EntitlementStatus.active:
                 continue
 
-            accounts = session.exec(
-                select(ContentSocialAccount).where(
-                    ContentSocialAccount.client_id == client.id,
-                    ContentSocialAccount.status == "active",
-                )
-            ).all()
+            # Target rows when the piece has them, every active account when it
+            # does not. The fallback lives in targets_service so the composer's
+            # channel list and this dispatch cannot drift apart.
+            accounts = targets_service.resolve_target_accounts(session, piece=piece)
             if not accounts:
                 continue
 
@@ -363,15 +365,39 @@ def _dispatch_scheduled_publications(session: Session, *, batch_limit: int) -> N
                 continue
 
             if not accepted and rejected:
-                # Nenhuma linha em content_social_publications foi criada, então
-                # a guarda NOT IN acima nunca vai excluir esta piece: ela seria
-                # redisparada em todo tick, para sempre e em silêncio. Não dá
-                # para resolver sozinho (falta asset final, plataforma
-                # incompatível, etc.), mas tem que ficar visível e auditável.
+                # Nenhuma conta aceitou. Sem nenhuma linha em
+                # content_social_publications a guarda NOT IN acima nunca
+                # excluiria esta piece: ela era redisparada e reauditada a cada
+                # tick, para sempre.
+                #
+                # Gravar uma linha `failed` por conta rejeitada resolve as duas
+                # pontas de uma vez: a guarda passa a excluir a piece, e o
+                # motivo fica visível na tela (cartão vermelho no calendário,
+                # com a mensagem) em vez de existir só no log.
                 logger.warning(
                     f"piece {piece.id}: all {len(rejected)} target account(s) rejected "
                     f"scheduled publish — {[r.get('reason') for r in rejected]}"
                 )
+                for rejection in rejected:
+                    session.add(
+                        ContentSocialPublication(
+                            tenant_id=tenant.id,
+                            client_id=client.id,
+                            content_piece_id=piece.id,
+                            social_account_id=rejection["social_account_id"],
+                            platform=rejection.get("platform") or "unknown",
+                            status=PublicationStatus.failed,
+                            attempt_count=0,
+                            error_code=rejection.get("reason") or "account_rejected",
+                            error_message=rejection.get("message"),
+                            completed_at=datetime.utcnow(),
+                        )
+                    )
+                session.commit()
+                publish_dispatcher.recompute_publication_summary(
+                    session, content_piece_id=piece.id
+                )
+                session.commit()
                 audit.write_audit_log(
                     session,
                     tenant_id=tenant.id,
@@ -379,6 +405,12 @@ def _dispatch_scheduled_publications(session: Session, *, batch_limit: int) -> N
                     entity_id=piece.id,
                     action="scheduled_publish_all_rejected",
                     actor="system:automation_scheduler",
+                    details={
+                        "rejected": len(rejected),
+                        "reasons": sorted(
+                            {str(r.get("reason")) for r in rejected if r.get("reason")}
+                        ),
+                    },
                 )
         except Exception:
             # Uma piece problemática não pode derrubar o passe inteiro.

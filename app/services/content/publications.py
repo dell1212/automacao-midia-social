@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.models.content import ContentCampaign, ContentClient, ContentPiece, ContentSocialAccount
 from app.models.content_generation import ContentAsset
@@ -52,6 +52,20 @@ def list_publications_for_piece(
             .order_by(ContentSocialPublication.id)
         ).all()
     )
+
+
+def count_publications_for_piece(session: Session, *, content_piece_id: int) -> int:
+    """Whether the publish pipeline has ever taken this piece.
+
+    A count rather than list_publications_for_piece(...) because the callers
+    that ask this — the calendar's lock rule, the reschedule guard — only need
+    existence, and the rows carry encrypted payloads worth not loading.
+    """
+    return session.exec(
+        select(func.count(ContentSocialPublication.id)).where(
+            ContentSocialPublication.content_piece_id == content_piece_id
+        )
+    ).one()
 
 
 def _tenant_id_for_piece(session: Session, piece: ContentPiece) -> int:

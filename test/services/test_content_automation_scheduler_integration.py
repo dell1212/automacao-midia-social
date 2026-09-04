@@ -25,7 +25,7 @@ from app.services.content import automation_scheduler as scheduler
 from app.services.content import pieces as pieces_service
 
 
-def _create_piece_as_if_generated(session, *, payload):
+def _create_piece_as_if_generated(session, *, tenant_id, payload):
     """Stand-in for pieces_service.create_piece that skips the async
     generation call (out of scope here — covered separately by the pipeline
     tests) but otherwise behaves like generation already finished: a real

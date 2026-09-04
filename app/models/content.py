@@ -202,6 +202,68 @@ class ContentGenerationTemplate(SQLModel, table=True):
     is_active: bool = Field(default=True)
 
 
+class ContentPieceCaption(SQLModel, table=True):
+    """The text published alongside a piece's media.
+
+    Until this existed, the adapters published `generation_prompt` — the
+    image-generation prompt — as the visible post body on LinkedIn, X, YouTube
+    and TikTok, and Instagram and Facebook posted with no text at all.
+
+    One row per (piece, platform), with `platform = NULL` as the shared
+    "Global" copy. A table rather than caption_linkedin/caption_x columns
+    because overrides are inherently one-to-many and a column-per-platform
+    scheme does not survive the seventh network.
+    """
+
+    __tablename__ = "content_piece_captions"
+    __table_args__ = (
+        UniqueConstraint(
+            "content_piece_id", "platform", name="uq_content_piece_captions_piece_platform"
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    content_piece_id: int = Field(foreign_key="content_pieces.id", index=True)
+    # NULL is the global row every platform falls back to.
+    platform: Optional[str] = Field(default=None)
+    title: Optional[str] = None
+    body: Optional[str] = None
+    hashtags: list = Field(default_factory=list, sa_column=Column(JSON))
+    link_url: Optional[str] = None
+    # False on the global row; True marks a platform row as a deliberate
+    # override rather than a leftover.
+    is_override: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ContentPieceTarget(SQLModel, table=True):
+    """Which accounts a piece is meant for.
+
+    Until this existed there was no per-piece targeting at all: the scheduler
+    published every approved piece to *every* active account of the client
+    (automation_scheduler.py). "Post this one to LinkedIn only" was not
+    expressible.
+
+    Absence still means "all active accounts", so the table is purely additive
+    — a piece with no target rows behaves exactly as it did before.
+    """
+
+    __tablename__ = "content_piece_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "content_piece_id",
+            "social_account_id",
+            name="uq_content_piece_targets_piece_account",
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    content_piece_id: int = Field(foreign_key="content_pieces.id", index=True)
+    social_account_id: int = Field(foreign_key="content_social_accounts.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class ContentAuditLog(SQLModel, table=True):
     __tablename__ = "content_audit_logs"
 

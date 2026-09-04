@@ -23,7 +23,7 @@ class XAdapter(PublisherAdapter):
                 "X only accepts image or video pieces",
             )
 
-    def publish(self, piece, asset, account, credentials) -> PublishResult:
+    def publish(self, piece, asset, account, credentials, caption="") -> PublishResult:
         access_token = credentials["access_token"]
         media_bytes = get_bytes(asset.url)
         media_category = (
@@ -40,7 +40,7 @@ class XAdapter(PublisherAdapter):
 
         tweet_response = post_json(
             _TWEETS_URL,
-            {"text": piece.generation_prompt or "", "media": {"media_ids": [media_id]}},
+            {"text": caption, "media": {"media_ids": [media_id]}},
             headers={"Authorization": f"Bearer {access_token}"},
         )
         tweet_id = tweet_response.json()["data"]["id"]

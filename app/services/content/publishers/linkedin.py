@@ -25,7 +25,7 @@ class LinkedInAdapter(PublisherAdapter):
                 "LinkedIn only accepts image or video pieces",
             )
 
-    def publish(self, piece, asset, account, credentials) -> PublishResult:
+    def publish(self, piece, asset, account, credentials, caption="") -> PublishResult:
         access_token = credentials["access_token"]
         author_urn = credentials["author_urn"]
         headers = {
@@ -80,7 +80,7 @@ class LinkedInAdapter(PublisherAdapter):
                 "lifecycleState": "PUBLISHED",
                 "specificContent": {
                     "com.linkedin.ugc.ShareContent": {
-                        "shareCommentary": {"text": piece.generation_prompt or ""},
+                        "shareCommentary": {"text": caption},
                         "shareMediaCategory": media_category,
                         "media": [{"status": "READY", "media": asset_urn}],
                     }

@@ -22,6 +22,7 @@ from app.models.content import (
     RiskLevel,
 )
 from app.models import content_publishing  # noqa: F401  (registra tabelas no metadata)
+from app.models.content_publishing import ContentSocialPublication, PublicationStatus
 from app.services.content import approval_rules as approval_rules_service
 from app.services.content import audit as audit_service
 from app.services.content import automation_scheduler as scheduler
@@ -603,7 +604,9 @@ class TestDispatchScheduledPublications(unittest.TestCase):
         piece = MagicMock(id=1, campaign_id=1)
         accounts = [MagicMock(id=10), MagicMock(id=11)]
         session = MagicMock()
-        session.exec.return_value.all.side_effect = [[piece], accounts]
+        # Third entry is the piece's target rows: empty means "no targeting",
+        # which resolves to all active accounts — what these tests assert.
+        session.exec.return_value.all.side_effect = [[piece], accounts, []]
         session.get.side_effect = lambda model, id_: {
             ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
             ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
@@ -625,7 +628,9 @@ class TestDispatchScheduledPublications(unittest.TestCase):
         piece_b = MagicMock(id=2, campaign_id=1)
         accounts = [MagicMock(id=10)]
         session = MagicMock()
-        session.exec.return_value.all.side_effect = [[piece_a, piece_b], accounts, accounts]
+        session.exec.return_value.all.side_effect = [
+            [piece_a, piece_b], accounts, [], accounts, []
+        ]
         session.get.side_effect = lambda model, id_: {
             ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
             ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
@@ -646,7 +651,9 @@ class TestDispatchScheduledPublications(unittest.TestCase):
         piece = MagicMock(id=1, campaign_id=1)
         accounts = [MagicMock(id=10)]
         session = MagicMock()
-        session.exec.return_value.all.side_effect = [[piece], accounts]
+        # Third entry is the piece's target rows: empty means "no targeting",
+        # which resolves to all active accounts — what these tests assert.
+        session.exec.return_value.all.side_effect = [[piece], accounts, []]
         session.get.side_effect = lambda model, id_: {
             ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
             ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
@@ -665,7 +672,12 @@ class TestDispatchScheduledPublications(unittest.TestCase):
             publications_service, "resolve_publication_request", return_value=([], rejected)
         ):
             with patch.object(audit_service, "write_audit_log") as write_audit_log:
-                scheduler._dispatch_scheduled_publications(session, batch_limit=50)
+                # The rejection now also persists a `failed` publication row per
+                # rejected account, so the summary is recomputed from them.
+                with patch.object(
+                    scheduler.publish_dispatcher, "recompute_publication_summary"
+                ) as recompute:
+                    scheduler._dispatch_scheduled_publications(session, batch_limit=50)
 
         write_audit_log.assert_called_once()
         _, kwargs = write_audit_log.call_args
@@ -674,11 +686,23 @@ class TestDispatchScheduledPublications(unittest.TestCase):
         self.assertEqual(kwargs["entity_id"], 1)
         self.assertEqual(kwargs["tenant_id"], 1)
 
+        # A row per rejected account is what stops the NOT IN guard from
+        # re-firing this piece every tick, forever.
+        recompute.assert_called_once()
+        added = [call.args[0] for call in session.add.call_args_list]
+        publications = [row for row in added if isinstance(row, ContentSocialPublication)]
+        self.assertEqual(len(publications), 1)
+        self.assertEqual(publications[0].status, PublicationStatus.failed)
+        self.assertEqual(publications[0].social_account_id, 10)
+        self.assertEqual(publications[0].error_code, "unsupported_capability")
+
     def test_partial_acceptance_does_not_write_the_rejection_audit_log(self):
         piece = MagicMock(id=1, campaign_id=1)
         accounts = [MagicMock(id=10), MagicMock(id=11)]
         session = MagicMock()
-        session.exec.return_value.all.side_effect = [[piece], accounts]
+        # Third entry is the piece's target rows: empty means "no targeting",
+        # which resolves to all active accounts — what these tests assert.
+        session.exec.return_value.all.side_effect = [[piece], accounts, []]
         session.get.side_effect = lambda model, id_: {
             ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
             ("ContentClient", 1): MagicMock(id=1, tenant_id=1),
@@ -700,7 +724,9 @@ class TestDispatchScheduledPublications(unittest.TestCase):
         piece_b = MagicMock(id=2, campaign_id=1)
         accounts = [MagicMock(id=10)]
         session = MagicMock()
-        session.exec.return_value.all.side_effect = [[piece_a, piece_b], accounts, accounts]
+        session.exec.return_value.all.side_effect = [
+            [piece_a, piece_b], accounts, [], accounts, []
+        ]
         session.get.side_effect = lambda model, id_: {
             ("ContentCampaign", 1): MagicMock(id=1, client_id=1),
             ("ContentClient", 1): MagicMock(id=1, tenant_id=1),

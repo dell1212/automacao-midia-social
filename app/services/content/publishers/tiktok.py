@@ -28,7 +28,7 @@ class TikTokAdapter(PublisherAdapter):
                 "TikTok only accepts video pieces",
             )
 
-    def publish(self, piece, asset, account, credentials) -> PublishResult:
+    def publish(self, piece, asset, account, credentials, caption="") -> PublishResult:
         access_token = credentials["access_token"]
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -39,7 +39,7 @@ class TikTokAdapter(PublisherAdapter):
             _INIT_URL,
             {
                 "post_info": {
-                    "title": (piece.generation_prompt or f"Content piece {piece.id}")[:150],
+                    "title": (caption or f"Content piece {piece.id}").splitlines()[0][:150],
                     "privacy_level": "PUBLIC_TO_EVERYONE",
                 },
                 "source_info": {"source": "PULL_FROM_URL", "video_url": asset.url},

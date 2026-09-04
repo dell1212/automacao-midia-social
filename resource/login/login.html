@@ -101,7 +101,13 @@
         });
 
         document.body.classList.add("embedded");
-        frame.src = "/";
+        // ?path= opens the SPA straight at a route. The app has no address bar
+        // of its own once it is inside this iframe, so without this the only
+        // reachable routes are the ones something links to — which makes deep
+        // routes (a specific piece's composer) and the 404 impossible to try.
+        // Same-origin paths only: this must not become an open redirect.
+        var wanted = new URLSearchParams(window.location.search).get("path") || "/";
+        frame.src = wanted.charAt(0) === "/" && wanted.charAt(1) !== "/" ? wanted : "/";
       }
 
       document.getElementById("enter").addEventListener("click", enter);

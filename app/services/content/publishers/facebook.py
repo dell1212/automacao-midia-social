@@ -20,15 +20,22 @@ class FacebookAdapter(PublisherAdapter):
                 "Facebook only accepts image or video pieces",
             )
 
-    def publish(self, piece, asset, account, credentials) -> PublishResult:
+    def publish(self, piece, asset, account, credentials, caption="") -> PublishResult:
         access_token = credentials["access_token"]
         page_id = credentials["page_id"]
         endpoint = "videos" if piece.type == ContentPieceType.video else "photos"
         media_field = "file_url" if piece.type == ContentPieceType.video else "url"
 
+        payload = {media_field: asset.url, "access_token": access_token}
+        # Facebook posts used to go out with no text at all. The Graph API
+        # names this field differently per endpoint: `description` on /videos,
+        # `message` on /photos.
+        if caption:
+            payload["description" if endpoint == "videos" else "message"] = caption
+
         response = post_form(
             f"{_GRAPH_API_BASE}/{page_id}/{endpoint}",
-            data={media_field: asset.url, "access_token": access_token},
+            data=payload,
         )
         post_id = response.json()["id"]
 

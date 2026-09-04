@@ -24,6 +24,9 @@ from app.controllers.v1.content import (
     social_accounts,
     tenants,
     ui,
+    ui_agent,
+    ui_analytics,
+    ui_calendar,
     ui_config,
 )
 
@@ -47,4 +50,7 @@ root_api_router.include_router(providers.router)
 root_api_router.include_router(publications.router)
 root_api_router.include_router(models.router)
 root_api_router.include_router(ui.router)
+root_api_router.include_router(ui_calendar.router)
+root_api_router.include_router(ui_agent.router)
+root_api_router.include_router(ui_analytics.router)
 root_api_router.include_router(ui_config.router)

@@ -45,6 +45,12 @@ class PublisherAdapter(ABC):
         asset: ContentAsset,
         account: ContentSocialAccount,
         credentials: dict,
+        # The copy to publish, already resolved (platform override → global →
+        # generation_prompt fallback) and clamped to this platform's limit by
+        # captions.resolve_for_platform. Adapters must publish this and never
+        # reach for piece.generation_prompt: that field is the *image
+        # generation* prompt, and publishing it was a live defect.
+        caption: str = "",
     ) -> PublishResult:
         ...
 

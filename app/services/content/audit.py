@@ -37,6 +37,7 @@ def list_audit_log(
     entity_type: Optional[str] = None,
     entity_id: Optional[int] = None,
     since: Optional[datetime] = None,
+    actor_prefix: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> List[ContentAuditLog]:
@@ -45,6 +46,12 @@ def list_audit_log(
         query = query.where(ContentAuditLog.entity_type == entity_type)
     if entity_id is not None:
         query = query.where(ContentAuditLog.entity_id == entity_id)
+    if actor_prefix is not None:
+        # Every automated decision is already logged with a `system:` actor
+        # (system:automation_scheduler, system:approval_engine,
+        # system:generation). Filtering on that prefix turns the existing audit
+        # trail into the agent's activity feed without a new table.
+        query = query.where(ContentAuditLog.actor.startswith(actor_prefix))
     if since is not None:
         query = query.where(ContentAuditLog.created_at >= since)
     query = query.order_by(ContentAuditLog.created_at.desc()).limit(limit).offset(offset)
