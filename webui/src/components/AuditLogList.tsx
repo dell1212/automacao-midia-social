@@ -2,10 +2,22 @@ import type { AuditLogEntry } from "../lib/types";
 
 // Shared by the CSV export in HistoryPage, so the on-screen "Detalhes"
 // column and the exported file describe a change the same way.
+//
+// `details` is a free-form JSON column and only *edit* events use the
+// {field: {before, after}} shape. Others record plain values — the scheduler
+// writes scheduled_publish_all_rejected, publish_requested carries counts.
+// Assuming the diff shape here threw on the first such row and took the whole
+// history table down with it, so each value is now narrowed before use.
 export function formatAuditDetails(details: AuditLogEntry["details"]): string {
   if (!details) return "";
   return Object.entries(details)
-    .map(([field, change]) => `${field}: ${String(change.before)} → ${String(change.after)}`)
+    .map(([field, value]) => {
+      if (value && typeof value === "object" && "before" in value && "after" in value) {
+        const change = value as { before: unknown; after: unknown };
+        return `${field}: ${String(change.before)} → ${String(change.after)}`;
+      }
+      return `${field}: ${value === null ? "—" : String(value)}`;
+    })
     .join("; ");
 }
 

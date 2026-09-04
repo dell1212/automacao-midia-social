@@ -180,7 +180,10 @@ export interface AuditLogEntry {
   entity_id: number;
   action: string;
   actor: string;
-  details: Record<string, { before: unknown; after: unknown }> | null;
+  // Free-form JSON. Edit events use {field: {before, after}}; others (the
+  // scheduler's rejections, publish counts, caption edits) store plain
+  // values, so this cannot be typed as the diff shape alone.
+  details: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -192,4 +195,96 @@ export interface PieceUpdatePayload {
   content_category?: string | null;
   risk_level?: string | null;
   scheduled_for?: string | null;
+}
+
+// --- Calendar (GET /content/ui/calendar) ---
+
+/** Derived on the server from status + scheduled_for + publication_summary.
+ * Not a ContentPiece status: the state machine the scheduler depends on stays
+ * as it is, and this vocabulary exists only for display. */
+export type CalendarState =
+  | "draft"
+  | "scheduled"
+  | "publishing"
+  | "published"
+  | "failed";
+
+export interface CalendarPlatform {
+  platform: string;
+  succeeded: number;
+  failed: number;
+}
+
+export interface CalendarItem {
+  id: number;
+  campaign_id: number;
+  campaign_name: string | null;
+  client_id: number | null;
+  client_name: string | null;
+  type: "video" | "image" | "audio";
+  status: string;
+  calendar_state: CalendarState;
+  scheduled_for: string | null;
+  posted_at: string | null;
+  title: string;
+  thumbnail_url: string | null;
+  platforms: CalendarPlatform[];
+  /** Publishing has started, so the schedule no longer decides anything and
+   * the card must refuse to be dragged. */
+  is_locked: boolean;
+}
+
+export interface CalendarResponse {
+  range: { date_from: string; date_to: string };
+  /** Keyed by "all" plus each CalendarState. Counted before the status filter
+   * is applied, so the pills show what each option would yield. */
+  counts: Record<string, number>;
+  items: CalendarItem[];
+}
+
+export interface CalendarFilterOption {
+  id: string;
+  label: string;
+}
+
+export interface CalendarFilters {
+  clients: CalendarFilterOption[];
+  campaigns: CalendarFilterOption[];
+  platforms: CalendarFilterOption[];
+  accounts: CalendarFilterOption[];
+}
+
+// --- Social Agent ---
+
+export interface ProposedPiece {
+  type: "image" | "video" | "audio";
+  generation_prompt: string;
+  narration_script: string | null;
+  caption: string | null;
+}
+
+export interface AgentProposal {
+  summary: string;
+  pieces: ProposedPiece[];
+  /** True when the LLM was unreachable and this is the deterministic
+   * fallback — the UI says so instead of passing it off as generated. */
+  is_fallback: boolean;
+}
+
+/** A generation step: what the pipeline actually did, per piece. */
+export interface GenerationJob {
+  id: number;
+  kind: string;
+  status: string;
+  provider: string | null;
+  model: string | null;
+  attempt_count: number;
+  retry_count: number;
+  duration_ms: number | null;
+  actual_cost: number | null;
+  estimated_cost: number | null;
+  currency: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
 }

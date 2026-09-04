@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiClient, apiErrorStatus } from "../lib/apiClient";
 import { useSession } from "../context/SessionProvider";
 import { RequireRole } from "../components/RequireRole";
 import { AuditLogList } from "../components/AuditLogList";
+import { CaptionEditor } from "../components/CaptionEditor";
 import { ErrorText } from "../components/ErrorText";
 import type {
   Avatar,
@@ -289,6 +290,13 @@ export function PieceDetail() {
         </form>
         {piece.status === "posted" && <p>Peça publicada — não pode mais ser editada.</p>}
       </RequireRole>
+
+      <h2>Legenda</h2>
+      <p>
+        <Link to={`/pieces/${id}/compose`}>Abrir no composer</Link> para escrever por
+        canal, escolher onde publicar e ver a prévia.
+      </p>
+      <CaptionEditor pieceId={Number(id)} canEdit={canApprove() && piece.status !== "posted"} />
 
       <h2>Publicações</h2>
       <ul>
