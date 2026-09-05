@@ -26,7 +26,11 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
+    // m-0: index.css's base layer sets `label { margin: 0 8px 12px 0 }` and
+    // only zeroes it via `form label { margin: 0 }` — neutralised today only
+    // because every Field happens to sit inside a <form>. Restating it here
+    // means a Field used outside a form does not silently inherit that gap.
+    <label className="flex flex-col gap-1.5 m-0">
       {/* Spans, not <p>: only phrasing content is valid inside a <label>. */}
       <span className="text-[13px] font-medium text-[var(--text-h)]">{label}</span>
       {children}

@@ -19,6 +19,7 @@ import {
   RISK_LEVELS,
   buildCondition,
   describeCondition,
+  describeParsedCondition,
   readCondition,
 } from "../../lib/approvalCondition";
 import type { ApprovalRule, ApprovalRulePayload, Campaign } from "../../lib/types";
@@ -139,6 +140,8 @@ export function ApprovalRules() {
   // leak into the next time it opens.
   function closeDrawer() {
     setDrawerOpen(false);
+    setAction("require_review");
+    setPriority(10);
     setCategories([]);
     setRisks([]);
     create.reset();
@@ -177,7 +180,7 @@ export function ApprovalRules() {
         if (!parsed) {
           return (
             <div className="flex flex-col gap-0.5">
-              <span className="text-[12px] text-bad">{describeCondition(rule.condition)}</span>
+              <span className="text-bad">{describeParsedCondition(parsed)}</span>
               <span className="font-mono text-[11px] text-[var(--text)] break-all">
                 {JSON.stringify(rule.condition)}
               </span>
@@ -185,7 +188,7 @@ export function ApprovalRules() {
           );
         }
         return (
-          <span className="text-[var(--text)]">{describeCondition(rule.condition)}</span>
+          <span className="text-[var(--text)]">{describeParsedCondition(parsed)}</span>
         );
       },
     },

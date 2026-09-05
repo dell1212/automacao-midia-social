@@ -58,11 +58,20 @@ function PriorityCell({ provider }: { provider: Provider }) {
         className="w-20 text-right font-mono"
         onChange={(event) => setValue(event.target.value)}
         onBlur={() => {
+          // An empty/whitespace field is Number("") === 0, not NaN — left
+          // unguarded, clearing the input and tabbing away would silently
+          // save priority 0 and jump this provider to the front of the
+          // queue. Treat it as "no change" and restore the server value
+          // instead of coercing it to zero.
+          if (value.trim() === "") {
+            setValue(String(provider.priority));
+            return;
+          }
           const next = Number(value);
           if (!Number.isNaN(next) && next !== provider.priority) update.mutate(next);
         }}
       />
-      <span className="w-14 text-[11px] text-[var(--text)]">
+      <span className="w-14 text-[11px] text-[var(--text)]" aria-live="polite">
         {update.isPending ? "salvando…" : saved ? "salvo" : update.isError ? "falhou" : ""}
       </span>
     </span>

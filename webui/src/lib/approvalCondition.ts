@@ -110,8 +110,14 @@ function joinOr(labels: string[]): string {
  * can still match some pieces, all of them, or none — there is no shape-
  * agnostic way to know from here, and asserting "nunca bate" was simply
  * wrong for the string case. */
-export function describeCondition(condition: Record<string, unknown>): string {
-  const parsed = readCondition(condition);
+/** Same sentence as `describeCondition`, from a result `readCondition`
+ * already produced. Exists so a caller that already needed the parsed shape
+ * (to pick a rendering branch, say) does not pay for a second `readCondition`
+ * pass just to get the sentence — both wrap this one implementation, so the
+ * wording stays in exactly one place either way. */
+export function describeParsedCondition(
+  parsed: { categories: string[]; risks: string[] } | null,
+): string {
   if (!parsed) return "condição não reconhecida — a tela não sabe interpretá-la";
 
   const clauses: string[] = [];
@@ -126,4 +132,8 @@ export function describeCondition(condition: Record<string, unknown>): string {
 
   if (clauses.length === 0) return "para qualquer peça";
   return `quando ${clauses.join(" e ")}`;
+}
+
+export function describeCondition(condition: Record<string, unknown>): string {
+  return describeParsedCondition(readCondition(condition));
 }
