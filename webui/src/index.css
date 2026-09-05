@@ -434,3 +434,33 @@ code {
 
 }
 /* end @layer base */
+
+/* The drawer's backdrop and slide-in. `::backdrop` sits outside the document
+   tree in some engines and does not inherit custom properties, so its colour
+   is spelled out here for each theme instead of using a token. */
+.settings-drawer::backdrop {
+  background: rgba(20, 20, 19, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-drawer::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+  }
+}
+
+.settings-drawer[open] {
+  animation: settings-drawer-in 0.18s ease-out;
+}
+
+@keyframes settings-drawer-in {
+  from {
+    transform: translateX(1.5rem);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-drawer[open] {
+    animation: none;
+  }
+}
