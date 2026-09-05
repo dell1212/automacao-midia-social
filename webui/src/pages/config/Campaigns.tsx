@@ -151,7 +151,7 @@ export function Campaigns() {
         description="O horizonte define quantos dias à frente a automação gera conteúdo."
       >
         <form
-          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (clientId !== null && horizonDays >= 1) create.mutate();
@@ -195,7 +195,7 @@ export function Campaigns() {
             <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
           ) : null}
 
-          <div className="flex items-center gap-2 [&>button+button]:ml-0">
+          <div className="flex items-center gap-2">
             <Button
               type="submit"
               variant="primary"

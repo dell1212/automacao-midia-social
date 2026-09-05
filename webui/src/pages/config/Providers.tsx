@@ -83,8 +83,7 @@ function PriorityCell({ provider }: { provider: Provider }) {
         // nothing — Tailwind emits both as plain utilities and w-full sorts
         // after w-20 in the generated stylesheet, so w-full wins regardless
         // of argument order (see cn.ts). The arbitrary-variant form compiles
-        // into a separate, later block of the utilities layer (same trick as
-        // `[&>button+button]:ml-0` elsewhere in these screens), so it wins on
+        // into a separate, later block of the utilities layer, so it wins on
         // CSS source order instead of relying on one that doesn't apply here.
         className="[&]:w-20 text-right font-mono"
         onChange={(event) => setValue(event.target.value)}
@@ -229,7 +228,7 @@ export function Providers() {
         description="A credencial é enviada ao servidor e não volta para esta tela."
       >
         <form
-          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             create.mutate({
@@ -289,7 +288,7 @@ export function Providers() {
             <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
           ) : null}
 
-          <div className="flex items-center gap-2 [&>button+button]:ml-0">
+          <div className="flex items-center gap-2">
             <Button
               type="submit"
               variant="primary"

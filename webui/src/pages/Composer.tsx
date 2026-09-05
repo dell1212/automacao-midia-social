@@ -347,7 +347,7 @@ export function Composer() {
               </div>
 
               {activeValidation && activeValidation.issues.length > 0 ? (
-                <ul className="m-0 flex flex-col gap-1 list-none p-0 max-w-none">
+                <ul className="flex flex-col gap-1">
                   {activeValidation.issues.map((issue) => (
                     <li
                       key={issue.code}

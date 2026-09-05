@@ -1,3 +1,4 @@
+import { DataTable, type Column } from "./settings/DataTable";
 import type { AuditLogEntry } from "../lib/types";
 
 // Shared by the CSV export in HistoryPage, so the on-screen "Detalhes"
@@ -21,37 +22,76 @@ export function formatAuditDetails(details: AuditLogEntry["details"]): string {
     .join("; ");
 }
 
-export function AuditLogList({ entries }: { entries: AuditLogEntry[] }) {
-  if (entries.length === 0) {
-    return <p>Nenhum evento registrado.</p>;
-  }
+const COLUMNS: Array<Column<AuditLogEntry>> = [
+  {
+    key: "created_at",
+    header: "Data",
+    width: "11rem",
+    render: (entry) => (
+      <span className="whitespace-nowrap font-mono text-[12px]">
+        {new Date(entry.created_at).toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    key: "action",
+    header: "Ação",
+    width: "12rem",
+    render: (entry) => <span className="font-medium">{entry.action}</span>,
+  },
+  {
+    key: "entity",
+    header: "Entidade",
+    width: "13rem",
+    render: (entry) => (
+      <span className="whitespace-nowrap">
+        {entry.entity_type} <span className="text-[var(--text)]">#{entry.entity_id}</span>
+      </span>
+    ),
+  },
+  { key: "actor", header: "Ator", width: "10rem", render: (entry) => entry.actor },
+  {
+    key: "details",
+    header: "Detalhes",
+    // Events recorded before the 5c history feature (approve/reject from 5a,
+    // all of 5b's config CRUD) have details === null.
+    render: (entry) => (
+      <span className="text-[var(--text)]">{formatAuditDetails(entry.details)}</span>
+    ),
+  },
+];
 
+/** The audit feed, as a table.
+ *
+ * Takes the query's own loading/error state rather than only its rows: both
+ * callers (the Histórico page and a piece's detail) used to spell those two
+ * states out as bare "Carregando..." paragraphs above the table, which made
+ * the list collapse and shove the page around on every refetch. DataTable
+ * owns all three states, so they now render the same here as everywhere else.
+ */
+export function AuditLogList({
+  entries,
+  isLoading,
+  isError,
+  error,
+  emptyHint,
+}: {
+  entries: AuditLogEntry[] | undefined;
+  isLoading?: boolean;
+  isError?: boolean;
+  error?: unknown;
+  emptyHint?: string;
+}) {
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Data</th>
-          <th>Ação</th>
-          <th>Entidade</th>
-          <th>Ator</th>
-          <th>Detalhes</th>
-        </tr>
-      </thead>
-      <tbody>
-        {entries.map((entry) => (
-          <tr key={entry.id}>
-            <td>{new Date(entry.created_at).toLocaleString()}</td>
-            <td>{entry.action}</td>
-            <td>
-              {entry.entity_type} #{entry.entity_id}
-            </td>
-            <td>{entry.actor}</td>
-            {/* Events recorded before the 5c history feature (approve/reject
-                from 5a, all of 5b's config CRUD) have details === null. */}
-            <td>{formatAuditDetails(entry.details)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <DataTable
+      columns={COLUMNS}
+      rows={entries}
+      rowKey={(entry) => entry.id}
+      isLoading={isLoading}
+      isError={isError}
+      error={error}
+      emptyTitle="Nenhum evento registrado"
+      emptyHint={emptyHint}
+    />
   );
 }
