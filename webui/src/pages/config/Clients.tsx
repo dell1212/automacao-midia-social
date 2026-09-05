@@ -27,8 +27,8 @@ export function Clients() {
     mutationFn: (payload: ClientPayload) =>
       apiClient.post<Client>("/content/ui/config/clients", payload),
     onSuccess: () => {
-      setName("");
       setDrawerOpen(false);
+      setName("");
       queryClient.invalidateQueries({ queryKey: ["config", "clients"] });
     },
   });
@@ -39,6 +39,12 @@ export function Clients() {
   });
 
   const forbidden = apiErrorStatus(create.error) === 403;
+
+  function closeDrawer() {
+    setDrawerOpen(false);
+    setName("");
+    create.reset();
+  }
 
   const columns: Array<Column<Client>> = [
     {
@@ -100,12 +106,12 @@ export function Clients() {
 
       <Drawer
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeDrawer}
         title="Novo cliente"
         description="O nome pode ser alterado depois pelo suporte."
       >
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
             create.mutate({ name });
@@ -126,7 +132,7 @@ export function Clients() {
             <Button type="submit" variant="primary" disabled={create.isPending || !name.trim()}>
               {create.isPending ? "Criando…" : "Criar cliente"}
             </Button>
-            <Button type="button" variant="ghost" onClick={() => setDrawerOpen(false)}>
+            <Button type="button" variant="ghost" onClick={closeDrawer}>
               Cancelar
             </Button>
           </div>
