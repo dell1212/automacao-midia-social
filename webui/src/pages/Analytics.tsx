@@ -51,6 +51,19 @@ const RANGES = [
   { key: "90", label: "90D" },
 ];
 
+// The account table is the accessible fallback for the charts above, so it
+// gets the same header/cell treatment as `settings/DataTable` — micro-label
+// headers, hairline row separators — rather than inheriting a bare-tag rule.
+// Alignment is never baked in: `cn` joins classes but the winner between two
+// same-specificity utilities is stylesheet order, not argument order, so a
+// TH carrying `text-left` could not be overridden to `text-right` by a caller.
+// Each cell states its own alignment instead. The UA sheet centres <th>, and
+// Preflight does not reset that, so "left" has to be spelled out too.
+const TH =
+  "px-3 py-2 font-mono text-[10px] font-medium uppercase tracking-[0.12em] " +
+  "text-[var(--text)] whitespace-nowrap";
+const TD = "px-3 py-2 align-middle text-[var(--text-h)]";
+
 function pct(value: number | null): string {
   return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 }
@@ -210,27 +223,30 @@ export function Analytics() {
             ) : (
               /* The table is also the accessible fallback for the charts
                  above — every number they encode is readable here. */
-              <table className="w-full">
+              <table className="w-full border-collapse text-[13px]">
                 <thead>
-                  <tr>
-                    <th className="text-left">Conta</th>
-                    <th className="text-right">Publicadas</th>
-                    <th className="text-right">Falhas</th>
-                    <th className="text-right">Taxa</th>
+                  <tr className="border-b border-[var(--border)]">
+                    <th className={cn(TH, "text-left")}>Conta</th>
+                    <th className={cn(TH, "text-right")}>Publicadas</th>
+                    <th className={cn(TH, "text-right")}>Falhas</th>
+                    <th className={cn(TH, "text-right")}>Taxa</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.account_performance.map((row) => (
-                    <tr key={row.social_account_id}>
-                      <td>
+                    <tr
+                      key={row.social_account_id}
+                      className="border-b border-[var(--border)] last:border-b-0"
+                    >
+                      <td className={cn(TD, "text-left")}>
                         <span className="flex items-center gap-1.5">
                           <PlatformIcon platform={row.platform as Platform} size={13} />
                           {row.label}
                         </span>
                       </td>
-                      <td className="text-right font-mono">{row.published}</td>
-                      <td className="text-right font-mono">{row.failed}</td>
-                      <td className="text-right font-mono">{pct(row.success_rate)}</td>
+                      <td className={cn(TD, "text-right font-mono")}>{row.published}</td>
+                      <td className={cn(TD, "text-right font-mono")}>{row.failed}</td>
+                      <td className={cn(TD, "text-right font-mono")}>{pct(row.success_rate)}</td>
                     </tr>
                   ))}
                 </tbody>

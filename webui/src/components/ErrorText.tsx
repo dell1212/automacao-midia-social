@@ -19,7 +19,7 @@ export function ErrorText({
 
   const status = apiErrorStatus(error);
   if (status === 401) return null;
-  if (status === 409 && conflict) return <p>{conflict}</p>;
+  const message = status === 409 && conflict ? conflict : fallback;
 
-  return <p>{fallback}</p>;
+  return <p className="m-0 text-[12px] text-bad">{message}</p>;
 }
