@@ -112,7 +112,7 @@ export function RowActions({
               role="menuitem"
               onClick={() => setConfirming(action.label)}
               className={cn(
-                "block w-full h-8 px-3 text-left text-[13px] font-medium",
+                "block w-full h-8 px-3 text-left text-[13px] font-medium ml-0 rounded-none",
                 "bg-transparent border-0 cursor-pointer transition-colors",
                 "hover:bg-[var(--code-bg)]",
                 action.danger ? "text-bad" : "text-[var(--text-h)]",
