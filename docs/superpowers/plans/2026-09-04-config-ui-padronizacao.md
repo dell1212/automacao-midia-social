@@ -18,7 +18,7 @@
 - **Não mexer em `RequireRole`.** Toda checagem de permissão fica exatamente onde está.
 - **Não mexer no `AppShell`** (menu lateral) — pedido explícito do autor.
 - **Sem suíte de testes.** O `webui` não tem `vitest` nem script `test`. A política do projeto (ver handoff `2026-08-30-webui-ux-config-backlog.md`) é verificar com `tsc -b && vite build` limpo + `oxlint` e validação visual no navegador. **Não introduzir suíte de testes neste plano.**
-- **`oxlint` tem 3 warnings pré-existentes** (2 em `SessionProvider.tsx`, 1 em `AuditLogList.tsx`). São a linha de base: nenhuma task pode adicionar warnings novos.
+- **`oxlint` tem 9 warnings pré-existentes** — medidos nesta base, não estimados: `PlatformIcon.tsx` (3), `SessionProvider.tsx` (2), `Charts.tsx` (1), `CaptionEditor.tsx` (1), `AuditLogList.tsx` (1), `Composer.tsx` (1). Todos são `react(only-export-components)` ou `react(set-state-in-effect)`. São a linha de base: nenhuma task pode adicionar warnings novos, e nenhuma precisa corrigir estes.
 - **Textos de interface em português**, com acentuação correta. Código, nomes de componentes, props e comentários em inglês.
 - **`Field` renderiza um `<label>` que envolve o controle**, e `<label>` só aceita phrasing content. Dentro de um `Field`, usar `<span className="block">` ou `<span className="flex">` onde normalmente se usaria `<div>`. Para um **grupo** de controles (chips, radios), `Field` é a ferramenta errada — usar `<fieldset>`/`<legend>`, como o `ChipGroup` da Task 13 faz.
 - **Endpoints: copiar do arquivo que está sendo reescrito, nunca de memória.** Dois casos não seguem o padrão REST que o resto sugere, e "corrigi-los" quebra a tela:
@@ -66,7 +66,9 @@ Tasks que tocam tela adicionam validação no navegador. Para subir o ambiente l
 
 **Modificar:** as 7 telas em `webui/src/pages/config/`.
 
-**Não tocar:** `index.css`, `AppShell.tsx`, `App.tsx`, `components/ui/*`, `RequireRole.tsx`, qualquer arquivo do backend.
+**Não tocar:** `AppShell.tsx`, `App.tsx`, `components/ui/*`, `RequireRole.tsx`, qualquer arquivo do backend.
+
+**`index.css` — regra especial:** o bloco `@layer base` existente e tudo acima dele são intocáveis. A Task 5 **acrescenta** as regras de `.settings-drawer` ao fim do arquivo, depois desse bloco; é a única alteração autorizada neste arquivo em todo o plano.
 
 ---
 
@@ -300,7 +302,7 @@ git commit -m "feat(webui): entity lifecycle chip for the settings screens"
 - Consumes: `Card` de `components/ui/Card`, `SkeletonRows`/`EmptyState` de `components/ui/Feedback`, `cn`
 - Produces:
   - `interface Column<T> { key: string; header: string; align?: "left" | "right"; width?: string; render: (row: T) => ReactNode }`
-  - `DataTable<T>({ columns, rows, rowKey, isLoading, isError, emptyTitle, emptyHint, emptyAction }): JSX.Element`
+  - `DataTable<T>({ columns, rows, rowKey, isLoading, isError, emptyTitle, emptyHint }): JSX.Element`
 
 - [ ] **Step 1: Escrever `DataTable.tsx`**
 
@@ -333,7 +335,6 @@ export function DataTable<T>({
   isError,
   emptyTitle,
   emptyHint,
-  emptyAction,
 }: {
   columns: Array<Column<T>>;
   rows: T[] | undefined;
@@ -342,7 +343,6 @@ export function DataTable<T>({
   isError?: boolean;
   emptyTitle: string;
   emptyHint?: string;
-  emptyAction?: ReactNode;
 }) {
   if (isLoading) {
     return (
@@ -2997,7 +2997,10 @@ Esperado: build limpo; `oxlint` com exatamente os 3 warnings pré-existentes.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A webui/src
+# Stage only the files this task actually changed — list them explicitly.
+# `git add -A` here would sweep in unrelated work sitting in the tree.
+git status --short webui/src
+git add <os arquivos que a Task 14 alterou>
 git commit -m "fix(webui): final pass over the standardised settings screens"
 ```
 
