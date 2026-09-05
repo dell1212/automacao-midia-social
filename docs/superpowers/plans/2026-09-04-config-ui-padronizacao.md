@@ -70,6 +70,22 @@ Tasks que tocam tela adicionam validação no navegador. Para subir o ambiente l
 
 **`index.css` — regra especial:** o bloco `@layer base` existente e tudo acima dele são intocáveis. A Task 5 **acrescenta** as regras de `.settings-drawer` ao fim do arquivo, depois desse bloco; é a única alteração autorizada neste arquivo em todo o plano.
 
+### Vazamentos do `@layer base` já medidos — não reintroduzir
+
+Cada um destes custou uma rodada de correção. As classes que os neutralizam já estão no código de cada task; não as remova por parecerem redundantes.
+
+| Regra base | Onde vaza | Neutralizador |
+|---|---|---|
+| `form { align-items: flex-end; flex-wrap: wrap; margin: 4px 0 16px }` (`index.css:347`) | Todo `<form>` dos drawers. Com `flex-col`, `align-items: flex-end` encolhe cada campo e o cola na borda direita — medido: input com 167px de 386px disponíveis | `items-stretch flex-nowrap m-0` |
+| `button + button { margin-left: 8px }` (`index.css:282`), zerada só para `nav` | Todo par `[Ação] [Cancelar]`. Flex **soma** a margem ao `gap`, não a ignora — medido: 14px onde o `gap` declara 6px | `[&>button+button]:ml-0` no container |
+| `table { margin: 0 0 16px }` (`index.css:395`) | `DataTable` | `m-0` (já aplicado) |
+| `th, td { border-bottom }` (`index.css:403`) | Última linha da tabela | `[&:last-child>td]:border-b-0` no `<tr>` (já aplicado) |
+| `button { border-radius: var(--radius) }` | Itens do menu de `RowActions` | `rounded-none` (já aplicado) |
+
+O comentário em `index.css:276` afirma que a margem entre botões é "ignored inside nav/forms, which are flex". **É falso** — foi medido. Não confie nele.
+
+**Estado do drawer ao fechar.** Fechar por `Esc`, backdrop ou "Cancelar" precisa limpar os campos e chamar `<mutation>.reset()`. Sem isso, reabrir o painel mostra o que foi digitado antes e o erro da tentativa anterior, como se fossem novos.
+
 ---
 
 ## Task 1: Controles de formulário e Field
@@ -990,7 +1006,7 @@ export function Clients() {
         description="O nome pode ser alterado depois pelo suporte."
       >
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
             create.mutate({ name });
@@ -1007,7 +1023,7 @@ export function Clients() {
               required
             />
           </Field>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button type="submit" variant="primary" disabled={create.isPending || !name.trim()}>
               {create.isPending ? "Criando…" : "Criar cliente"}
             </Button>
@@ -1212,7 +1228,7 @@ export function Campaigns() {
         description="O horizonte define quantos dias à frente a automação gera conteúdo."
       >
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
             if (clientId !== null) create.mutate();
@@ -1251,7 +1267,7 @@ export function Campaigns() {
               onChange={(event) => setHorizonDays(Number(event.target.value))}
             />
           </Field>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"
               variant="primary"
@@ -1477,7 +1493,7 @@ export function Providers() {
         description="A credencial é enviada ao servidor e não volta para esta tela."
       >
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
             create.mutate({
@@ -1532,7 +1548,7 @@ export function Providers() {
               onChange={(event) => setPriority(Number(event.target.value))}
             />
           </Field>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"
               variant="primary"
@@ -1750,7 +1766,7 @@ export function SocialAccounts() {
         description="A credencial é enviada ao servidor e não volta para esta tela."
       >
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
             if (clientId === null) return;
@@ -1794,7 +1810,7 @@ export function SocialAccounts() {
               required
             />
           </Field>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"
               variant="primary"
@@ -2040,7 +2056,7 @@ export function GenerationTemplates() {
         description="Define o que a automação gera para cada peça desta campanha."
       >
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
             if (campaignId !== null && generationPrompt.trim() && effectiveAspectRatio.trim()) {
@@ -2121,7 +2137,7 @@ export function GenerationTemplates() {
               placeholder="ID da voz no provedor"
             />
           </Field>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"
               variant="primary"
@@ -2381,7 +2397,7 @@ export function Avatars() {
         description="A imagem de referência define a aparência usada na geração."
       >
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
             if (clientId === null || !imageFile) return;
@@ -2456,7 +2472,7 @@ export function Avatars() {
             />
           </Field>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"
               variant="primary"
@@ -2852,7 +2868,7 @@ export function ApprovalRules() {
         description="Sem nenhuma condição marcada, a regra vale para qualquer peça — útil como regra final, com a prioridade mais alta."
       >
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
             if (campaignId === null) return;
@@ -2909,7 +2925,7 @@ export function ApprovalRules() {
             </p>
           </Card>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"
               variant="primary"
