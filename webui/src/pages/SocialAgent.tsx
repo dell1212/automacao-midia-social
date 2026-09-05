@@ -166,7 +166,7 @@ export function SocialAgent() {
               hint="Geração proativa, aprovações automáticas e disparos agendados aparecem aqui."
             />
           ) : (
-            <ul className="m-0 list-none p-0 max-w-none">
+            <ul>
               {activity.data.map((entry) => (
                 <li
                   key={entry.id}
