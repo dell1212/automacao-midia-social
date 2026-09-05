@@ -250,6 +250,7 @@ export function ApprovalRules() {
           rowKey={(rule) => rule.id}
           isLoading={rules.isLoading}
           isError={rules.isError}
+          error={rules.error}
           emptyTitle="Nenhuma regra nesta campanha"
           emptyHint="Sem regra que bata, a peça vai para revisão humana."
         />

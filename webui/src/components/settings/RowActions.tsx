@@ -29,6 +29,25 @@ export function RowActions({
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const wasConfirmingRef = useRef<string | null>(null);
+
+  // Confirmation replaces the whole subtree (menu <-> confirm row), so the
+  // element that had focus is always unmounted on the way in and out of it.
+  // Left alone, focus falls back to <body> and a keyboard user has to blind-
+  // Tab to find their way back. Move it explicitly: into the confirm button
+  // when the row appears, back to the ⋯ trigger when it goes away — but only
+  // on that transition, not on mount, or every row would steal focus once.
+  useEffect(() => {
+    const container = rootRef.current;
+    if (container) {
+      if (confirming) {
+        container.querySelector<HTMLButtonElement>("button")?.focus();
+      } else if (wasConfirmingRef.current) {
+        container.querySelector<HTMLButtonElement>("button")?.focus();
+      }
+    }
+    wasConfirmingRef.current = confirming;
+  }, [confirming]);
 
   useEffect(() => {
     if (!open) return;
@@ -61,7 +80,20 @@ export function RowActions({
 
   if (active) {
     return (
-      <div className="inline-flex items-center gap-1.5 justify-end">
+      // ref={rootRef}: without it, this branch's own div is never the node
+      // the outside-pointerdown listener below checks against — the ref only
+      // followed the OTHER branch's div, so it went stale (null) the instant
+      // this branch mounted. `!rootRef.current?.contains(...)` then reads as
+      // "click landed outside" for every click, including the one on
+      // Confirmar itself, and the listener tears the confirmation down
+      // before the click handler below ever runs. Keyboard Enter never hits
+      // this path (no pointerdown), which is why it kept working throughout.
+      //
+      // [&>button+button]:ml-0 undoes `button + button { margin-left: 8px }`
+      // from index.css's base layer, same as the menu items below and the
+      // chip groups elsewhere — this row is a flex-gap layout, and left
+      // unscoped the base rule stacks its own margin on top of the gap.
+      <div ref={rootRef} className="inline-flex items-center gap-1.5 justify-end [&>button+button]:ml-0">
         <span className="text-[12px] text-[var(--text)]">Confirmar?</span>
         <Button
           size="sm"
@@ -92,7 +124,11 @@ export function RowActions({
         aria-expanded={open}
         disabled={pending}
         onClick={() => setOpen((value) => !value)}
-        className="px-1.5"
+        // [&]:px-1.5: Button's SIZES.sm sets `px-2.5`, which sorts after
+        // `px-1.5` in the generated stylesheet regardless of the order these
+        // classes are joined in — see the longer note on the same trick in
+        // Providers.tsx's PriorityCell.
+        className="[&]:px-1.5"
       >
         <MoreHorizontal size={15} />
       </Button>

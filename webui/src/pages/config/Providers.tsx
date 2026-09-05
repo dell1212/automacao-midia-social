@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { apiClient, apiErrorStatus } from "../../lib/apiClient";
@@ -35,17 +35,40 @@ function PriorityCell({ provider }: { provider: Provider }) {
   const queryClient = useQueryClient();
   const [value, setValue] = useState(String(provider.priority));
   const [saved, setSaved] = useState(false);
+  const savedTimeoutRef = useRef<number | undefined>(undefined);
+
+  // Adjusting state during render (not in an effect): `value` seeded once
+  // from `provider.priority` never picked up a value the server normalised —
+  // a refetch after this row's own save, or after ANY other provider's save
+  // invalidates the same shared query, passes down a new `provider` prop
+  // that this local edit buffer needs to track. `syncedPriority` is what
+  // makes this a one-time reset per actual server value instead of clobbering
+  // an in-progress edit on every unrelated re-render.
+  const [syncedPriority, setSyncedPriority] = useState(provider.priority);
+  if (provider.priority !== syncedPriority) {
+    setSyncedPriority(provider.priority);
+    setValue(String(provider.priority));
+  }
 
   const update = useMutation({
     mutationFn: (priority: number) =>
       apiClient.put<Provider>(`/content/ui/config/providers/${provider.id}`, { priority }),
     onSuccess: () => {
       setSaved(true);
-      window.setTimeout(() => setSaved(false), 1600);
+      // Clear any still-pending "salvo" reset from a previous save on this
+      // same cell before scheduling a new one — otherwise two saves in quick
+      // succession race and the earlier timeout can turn "salvo" back off
+      // right after the second save just turned it on.
+      window.clearTimeout(savedTimeoutRef.current);
+      savedTimeoutRef.current = window.setTimeout(() => setSaved(false), 1600);
       queryClient.invalidateQueries({ queryKey: ["config", "providers"] });
     },
     onError: () => setValue(String(provider.priority)),
   });
+
+  useEffect(() => {
+    return () => window.clearTimeout(savedTimeoutRef.current);
+  }, []);
 
   return (
     <span className="inline-flex items-center gap-2 justify-end">
@@ -55,7 +78,15 @@ function PriorityCell({ provider }: { provider: Provider }) {
         disabled={!provider.is_active || update.isPending}
         aria-label={`Prioridade de ${PROVIDER_LABEL[provider.provider]}`}
         title="Número menor é tentado primeiro entre provedores do mesmo tipo"
-        className="w-20 text-right font-mono"
+        // [&]:w-20, not plain w-20: Controls.tsx's CONTROL sets `w-full`, and
+        // cn() puts this className last in the string, but that decides
+        // nothing — Tailwind emits both as plain utilities and w-full sorts
+        // after w-20 in the generated stylesheet, so w-full wins regardless
+        // of argument order (see cn.ts). The arbitrary-variant form compiles
+        // into a separate, later block of the utilities layer (same trick as
+        // `[&>button+button]:ml-0` elsewhere in these screens), so it wins on
+        // CSS source order instead of relying on one that doesn't apply here.
+        className="[&]:w-20 text-right font-mono"
         onChange={(event) => setValue(event.target.value)}
         onBlur={() => {
           // An empty/whitespace field is Number("") === 0, not NaN — left
@@ -107,6 +138,13 @@ export function Providers() {
   });
 
   const invalidCredentials = apiErrorStatus(create.error) === 422;
+  // Any OTHER failure used to be silent — the button reverted and the drawer
+  // just sat there. 422 keeps its own message (shown on the Field itself,
+  // below); everything else gets this generic fallback.
+  const createErrorMessage =
+    create.isError && !invalidCredentials
+      ? "Não foi possível adicionar o provedor. Tente novamente."
+      : null;
 
   function closeDrawer() {
     setDrawerOpen(false);
@@ -179,6 +217,7 @@ export function Providers() {
         rowKey={(row) => row.id}
         isLoading={providers.isLoading}
         isError={providers.isError}
+        error={providers.error}
         emptyTitle="Nenhum provedor configurado"
         emptyHint="Sem provedor, a automação não consegue gerar conteúdo."
       />
@@ -245,6 +284,11 @@ export function Providers() {
               onChange={(event) => setPriority(Number(event.target.value))}
             />
           </Field>
+
+          {createErrorMessage ? (
+            <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
+          ) : null}
+
           <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"

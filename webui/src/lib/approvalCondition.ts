@@ -131,7 +131,17 @@ export function describeParsedCondition(
   }
 
   if (clauses.length === 0) return "para qualquer peça";
-  return `quando ${clauses.join(" e ")}`;
+  if (clauses.length === 1) return `quando ${clauses[0]}`;
+  // Joining both clauses with a bare " e " reads as precedence-ambiguous —
+  // "quando o risco for Alto ou Médio e a categoria for Médico ou Jurídico"
+  // can be parsed as (risco) AND (categoria), which is correct, or as
+  // (Alto) OR (Médio AND Médico) OR (Jurídico), which is not. There are only
+  // ever two clauses (SUPPORTED_KEYS has two entries), so spelling out "as
+  // duas condições" and separating them with a semicolon — rather than
+  // relying on "e" to both join clauses AND appear inside `joinOr`'s own
+  // "ou" list — removes the ambiguity without turning the sentence into
+  // pseudo-code.
+  return `quando as duas condições a seguir são verdadeiras: ${clauses.join("; e ")}`;
 }
 
 export function describeCondition(condition: Record<string, unknown>): string {

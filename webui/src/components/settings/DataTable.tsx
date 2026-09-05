@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Card } from "../ui/Card";
 import { EmptyState, SkeletonRows } from "../ui/Feedback";
 import { cn } from "../ui/cn";
+import { apiErrorStatus } from "../../lib/apiClient";
 
 export interface Column<T> {
   key: string;
@@ -24,6 +25,7 @@ export function DataTable<T>({
   rowKey,
   isLoading,
   isError,
+  error,
   emptyTitle,
   emptyHint,
 }: {
@@ -32,6 +34,10 @@ export function DataTable<T>({
   rowKey: (row: T) => string | number;
   isLoading?: boolean;
   isError?: boolean;
+  /** The query's `error`, so the hint below can say what actually went
+   * wrong instead of a one-size-fits-all "check your connection" — which
+   * reads as a network fault even for a 403. */
+  error?: unknown;
   emptyTitle: string;
   emptyHint?: string;
 }) {
@@ -44,12 +50,16 @@ export function DataTable<T>({
   }
 
   if (isError) {
+    const status = apiErrorStatus(error);
+    const hint =
+      status === 403
+        ? "Você não tem permissão para ver estes dados."
+        : status === 404
+          ? "Não encontrado — o recurso pode ter sido removido."
+          : "Verifique a conexão com o servidor e tente novamente.";
     return (
       <Card>
-        <EmptyState
-          title="Não foi possível carregar"
-          hint="Verifique a conexão com o servidor e tente novamente."
-        />
+        <EmptyState title="Não foi possível carregar" hint={hint} />
       </Card>
     );
   }

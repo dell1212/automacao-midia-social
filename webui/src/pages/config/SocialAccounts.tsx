@@ -60,6 +60,13 @@ export function SocialAccounts() {
       queryClient.invalidateQueries({ queryKey: ["config", "social-accounts", clientId] }),
   });
 
+  // Mirrors the convention in ApprovalRules.tsx/Clients.tsx/Providers.tsx:
+  // without this, a failed create just reverts the button with no
+  // explanation and the drawer sits there looking like nothing happened.
+  const createErrorMessage = create.isError
+    ? "Não foi possível conectar a conta. Tente novamente."
+    : null;
+
   function closeDrawer() {
     setDrawerOpen(false);
     setPlatform("instagram");
@@ -156,6 +163,7 @@ export function SocialAccounts() {
           rowKey={(account) => account.id}
           isLoading={accounts.isLoading}
           isError={accounts.isError}
+          error={accounts.error}
           emptyTitle="Nenhuma conta conectada"
           emptyHint="Conecte uma conta para que este cliente possa publicar."
         />
@@ -212,6 +220,11 @@ export function SocialAccounts() {
               required
             />
           </Field>
+
+          {createErrorMessage ? (
+            <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
+          ) : null}
+
           <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"

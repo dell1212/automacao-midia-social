@@ -39,6 +39,11 @@ export function Clients() {
   });
 
   const forbidden = apiErrorStatus(create.error) === 403;
+  // Any OTHER failure used to be silent — the button reverted and the drawer
+  // just sat there. 403 keeps its own message (shown on the Field itself,
+  // below); everything else gets this generic fallback.
+  const createErrorMessage =
+    create.isError && !forbidden ? "Não foi possível criar o cliente. Tente novamente." : null;
 
   function closeDrawer() {
     setDrawerOpen(false);
@@ -100,6 +105,7 @@ export function Clients() {
         rowKey={(client) => client.id}
         isLoading={clients.isLoading}
         isError={clients.isError}
+        error={clients.error}
         emptyTitle="Nenhum cliente cadastrado"
         emptyHint="Crie o primeiro cliente para começar a montar campanhas."
       />
@@ -128,6 +134,11 @@ export function Clients() {
               required
             />
           </Field>
+
+          {createErrorMessage ? (
+            <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
+          ) : null}
+
           <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button type="submit" variant="primary" disabled={create.isPending || !name.trim()}>
               {create.isPending ? "Criando…" : "Criar cliente"}

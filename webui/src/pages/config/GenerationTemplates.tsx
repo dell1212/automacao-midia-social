@@ -90,6 +90,13 @@ export function GenerationTemplates() {
       queryClient.invalidateQueries({ queryKey: ["config", "templates", campaignId] }),
   });
 
+  // Mirrors the convention in ApprovalRules.tsx/Clients.tsx/Providers.tsx:
+  // without this, a failed create just reverts the button with no
+  // explanation and the drawer sits there looking like nothing happened.
+  const createErrorMessage = create.isError
+    ? "Não foi possível criar o template. Tente novamente."
+    : null;
+
   function closeDrawer() {
     setDrawerOpen(false);
     setType("image");
@@ -190,6 +197,7 @@ export function GenerationTemplates() {
           rowKey={(row) => row.id}
           isLoading={templates.isLoading}
           isError={templates.isError}
+          error={templates.error}
           emptyTitle="Nenhum template nesta campanha"
           emptyHint="Sem template, a automação não sabe o que gerar."
         />
@@ -283,6 +291,11 @@ export function GenerationTemplates() {
               placeholder="ID da voz no provedor"
             />
           </Field>
+
+          {createErrorMessage ? (
+            <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
+          ) : null}
+
           <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"

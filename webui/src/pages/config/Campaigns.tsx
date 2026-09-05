@@ -49,6 +49,13 @@ export function Campaigns() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["config", "campaigns"] }),
   });
 
+  // Mirrors the convention in ApprovalRules.tsx/Clients.tsx/Providers.tsx:
+  // without this, a failed create just reverts the button with no
+  // explanation and the drawer sits there looking like nothing happened.
+  const createErrorMessage = create.isError
+    ? "Não foi possível criar a campanha. Tente novamente."
+    : null;
+
   function closeDrawer() {
     setDrawerOpen(false);
     setClientId(null);
@@ -132,6 +139,7 @@ export function Campaigns() {
         rowKey={(campaign) => campaign.id}
         isLoading={campaigns.isLoading}
         isError={campaigns.isError}
+        error={campaigns.error}
         emptyTitle="Nenhuma campanha cadastrada"
         emptyHint="Crie uma campanha para que a automação comece a gerar conteúdo."
       />
@@ -146,7 +154,7 @@ export function Campaigns() {
           className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
           onSubmit={(event) => {
             event.preventDefault();
-            if (clientId !== null) create.mutate();
+            if (clientId !== null && horizonDays >= 1) create.mutate();
           }}
         >
           <Field label="Cliente">
@@ -182,11 +190,20 @@ export function Campaigns() {
               onChange={(event) => setHorizonDays(Number(event.target.value))}
             />
           </Field>
+
+          {createErrorMessage ? (
+            <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
+          ) : null}
+
           <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
               type="submit"
               variant="primary"
-              disabled={create.isPending || clientId === null || !name.trim()}
+              // horizonDays < 1, not just falsy: clearing the field makes
+              // Number("") === 0, not NaN — the same shape PriorityCell
+              // guards against — so an emptied field would otherwise submit
+              // horizon_days: 0 instead of being caught here.
+              disabled={create.isPending || clientId === null || !name.trim() || horizonDays < 1}
             >
               {create.isPending ? "Criando…" : "Criar campanha"}
             </Button>

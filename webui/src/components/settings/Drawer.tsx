@@ -57,7 +57,11 @@ export function Drawer({
         "p-0 border-0 bg-transparent"
       }
     >
-      <div className="flex h-full flex-col border-l border-[var(--border)] bg-[var(--card-bg)]">
+      {/* text-[var(--text)]: <dialog> keeps the UA default `color: CanvasText`
+          (measured rgb(0,0,0), not the theme's --text) since nothing here
+          sets it. Harmless while every child restates its own color, but the
+          next form field added here would silently render in black-on-dark. */}
+      <div className="flex h-full flex-col border-l border-[var(--border)] bg-[var(--card-bg)] text-[var(--text)]">
         <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
           <div className="min-w-0">
             <h2 className="m-0 text-[15px] font-semibold tracking-tight text-[var(--text-h)]">
@@ -72,7 +76,10 @@ export function Drawer({
             variant="ghost"
             aria-label="Fechar"
             onClick={onClose}
-            className="px-1.5 shrink-0"
+            // [&]:px-1.5: Button's SIZES.sm sets `px-2.5`, which sorts after
+            // `px-1.5` in the generated stylesheet regardless of join order —
+            // see the note on the same trick in Providers.tsx's PriorityCell.
+            className="[&]:px-1.5 shrink-0"
           >
             <X size={15} />
           </Button>
