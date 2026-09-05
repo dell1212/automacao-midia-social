@@ -48,16 +48,27 @@ const RISK_LABEL = new Map<string, string>(
  * cannot be represented by the chips.
  *
  * `condition` is free-form JSON on the backend, so a rule can carry a key
- * outside the two supported ones, or a value that is not a list. Those rules
- * exist and the scheduler handles them (they never match). Returning null lets
- * the screen show them as they are rather than silently reinterpreting them. */
+ * outside the two supported ones, a value that is not a list, or a list. Those
+ * rules exist and the scheduler handles them. Returning null lets the screen
+ * show them as they are rather than silently reinterpreting them.
+ *
+ * A present key with a ZERO-LENGTH list is one of those null cases, not an
+ * absent key: `buildCondition` never emits one (an empty group is omitted
+ * entirely), but the backend does no validation on `condition`, so a row like
+ * `{"risk_level": []}` can already exist from the old free-form JSON
+ * textarea. Reading it as "no risk filter" would be exactly backwards — Python's
+ * `value not in []` is always true, so the rule matches NOTHING. The chips have
+ * no way to express "this key is present but can never match", so this must
+ * fall through to null rather than render a checked-nothing state as the
+ * catch-all. */
 export function readCondition(
   condition: Record<string, unknown>,
 ): { categories: string[]; risks: string[] } | null {
   for (const key of Object.keys(condition)) {
     if (!SUPPORTED_KEYS.includes(key)) return null;
     const value = condition[key];
-    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return null;
+    if (!Array.isArray(value) || value.length === 0) return null;
+    if (value.some((item) => typeof item !== "string")) return null;
   }
   const categories = (condition.content_category as string[] | undefined) ?? [];
   const risks = (condition.risk_level as string[] | undefined) ?? [];
@@ -90,19 +101,27 @@ function joinOr(labels: string[]): string {
  *
  * "ou" inside a group and "e" between groups is not decoration — it is the
  * backend's matching rule, and getting it backwards in the UI would teach the
- * operator the wrong model of their own automation. */
+ * operator the wrong model of their own automation.
+ *
+ * For a condition the chips cannot represent, this says only that — it never
+ * claims whether the rule matches or not. The backend's `in` check behaves
+ * differently depending on the shape of the value (a list is membership, but
+ * a plain string is SUBSTRING containment), so an unrepresentable condition
+ * can still match some pieces, all of them, or none — there is no shape-
+ * agnostic way to know from here, and asserting "nunca bate" was simply
+ * wrong for the string case. */
 export function describeCondition(condition: Record<string, unknown>): string {
   const parsed = readCondition(condition);
-  if (!parsed) return "condição não reconhecida — esta regra nunca bate";
+  if (!parsed) return "condição não reconhecida — a tela não sabe interpretá-la";
 
   const clauses: string[] = [];
   if (parsed.risks.length > 0) {
     const labels = parsed.risks.map((value) => RISK_LABEL.get(value) ?? value);
-    clauses.push(`o risco for ${joinOr(labels).toLowerCase()}`);
+    clauses.push(`o risco for ${joinOr(labels)}`);
   }
   if (parsed.categories.length > 0) {
     const labels = parsed.categories.map((value) => CATEGORY_LABEL.get(value) ?? value);
-    clauses.push(`a categoria for ${joinOr(labels).toLowerCase()}`);
+    clauses.push(`a categoria for ${joinOr(labels)}`);
   }
 
   if (clauses.length === 0) return "para qualquer peça";

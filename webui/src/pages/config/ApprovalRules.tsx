@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { apiClient } from "../../lib/apiClient";
+import { apiClient, apiErrorStatus } from "../../lib/apiClient";
 import { RequireRole } from "../../components/RequireRole";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -19,6 +19,7 @@ import {
   RISK_LEVELS,
   buildCondition,
   describeCondition,
+  readCondition,
 } from "../../lib/approvalCondition";
 import type { ApprovalRule, ApprovalRulePayload, Campaign } from "../../lib/types";
 
@@ -120,6 +121,19 @@ export function ApprovalRules() {
     return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
   }
 
+  // Mirrors the convention in Clients.tsx/Providers.tsx: without this, a
+  // failed create just reverts the button with no explanation and the
+  // drawer sits there looking like nothing happened.
+  const createErrorStatus = apiErrorStatus(create.error);
+  const createErrorMessage =
+    createErrorStatus === 403
+      ? "Você não tem permissão para criar regras."
+      : createErrorStatus === 404
+        ? "Campanha não encontrada — ela pode ter sido removida."
+        : create.isError
+          ? "Não foi possível criar a regra. Tente novamente."
+          : null;
+
   // One handler for every way out of the drawer (Esc, backdrop, Cancelar) so
   // the chip selections and any create.error from a previous attempt never
   // leak into the next time it opens.
@@ -152,9 +166,28 @@ export function ApprovalRules() {
     {
       key: "condition",
       header: "Condição",
-      render: (rule) => (
-        <span className="text-[var(--text)]">{describeCondition(rule.condition)}</span>
-      ),
+      render: (rule) => {
+        // When the chips can't represent this condition, showing only the
+        // sentence leaves the operator with "something is wrong" and no way
+        // to tell what. The old textarea screen always showed the raw JSON
+        // (git show 73acf55, ApprovalRules.tsx:81); with no edit path here
+        // either, dropping it would be a straight regression, so both the
+        // warning and the raw shape are shown together.
+        const parsed = readCondition(rule.condition);
+        if (!parsed) {
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[12px] text-bad">{describeCondition(rule.condition)}</span>
+              <span className="font-mono text-[11px] text-[var(--text)] break-all">
+                {JSON.stringify(rule.condition)}
+              </span>
+            </div>
+          );
+        }
+        return (
+          <span className="text-[var(--text)]">{describeCondition(rule.condition)}</span>
+        );
+      },
     },
     {
       key: "actions",
@@ -282,6 +315,10 @@ export function ApprovalRules() {
               {describeCondition(buildCondition(categories, risks))}
             </p>
           </Card>
+
+          {createErrorMessage ? (
+            <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
+          ) : null}
 
           <div className="flex items-center gap-2 [&>button+button]:ml-0">
             <Button
