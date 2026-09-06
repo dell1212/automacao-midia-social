@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from app.models.content import ContentPieceType
 from app.services.content.publish_errors import PublicationError, PublicationErrorCode
+from app.services.content.publishers.base import InsightsResult
 from app.services.content.publishers.tiktok import TikTokAdapter
 
 
@@ -14,6 +15,16 @@ def _piece(**overrides):
 
 def _asset(url="https://cdn.example.com/a.mp4"):
     return MagicMock(url=url)
+
+
+def _account():
+    return MagicMock()
+
+
+def _publication(**overrides):
+    base = dict(platform_post_id="v-1")
+    base.update(overrides)
+    return MagicMock(**base)
 
 
 class TestTikTokCompatibility(unittest.TestCase):
@@ -129,6 +140,66 @@ class TestTikTokPublish(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, PublicationErrorCode.transient)
         post_json.assert_called_once()
+
+
+class TestTikTokFetchInsights(unittest.TestCase):
+    def test_declares_support(self):
+        self.assertTrue(TikTokAdapter.supports_insights)
+
+    def test_maps_canonical_response(self):
+        response = MagicMock()
+        response.json.return_value = {
+            "data": {
+                "videos": [
+                    {
+                        "like_count": 40,
+                        "comment_count": 5,
+                        "share_count": 2,
+                        "view_count": 900,
+                    }
+                ]
+            }
+        }
+
+        with patch(
+            "app.services.content.publishers.tiktok.post_json", return_value=response
+        ) as post_json:
+            result = TikTokAdapter().fetch_insights(
+                _publication(), _account(), {"access_token": "tok"}
+            )
+
+        self.assertIsNone(result.reach)
+        self.assertEqual(result.impressions, 900)
+        self.assertEqual(result.likes, 40)
+        self.assertEqual(result.comments, 5)
+        self.assertEqual(result.shares, 2)
+        post_json.assert_called_once()
+
+    def test_no_video_returned_is_invalid_params(self):
+        response = MagicMock()
+        response.json.return_value = {"data": {"videos": []}}
+
+        with patch(
+            "app.services.content.publishers.tiktok.post_json", return_value=response
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                TikTokAdapter().fetch_insights(
+                    _publication(), _account(), {"access_token": "tok"}
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.invalid_params)
+
+    def test_error_propagates_uncaught(self):
+        with patch(
+            "app.services.content.publishers.tiktok.post_json",
+            side_effect=PublicationError(PublicationErrorCode.rate_limit, "slow down"),
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                TikTokAdapter().fetch_insights(
+                    _publication(), _account(), {"access_token": "tok"}
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.rate_limit)
 
 
 if __name__ == "__main__":
