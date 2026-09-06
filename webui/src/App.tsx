@@ -31,6 +31,8 @@ function Gate({ children }: { children: ReactNode }) {
 
   if (status === "waiting") return <GateMessage>Aguardando sessão do app mãe…</GateMessage>;
   if (status === "loading") return <GateMessage>Validando sessão…</GateMessage>;
+  if (status === "not_entitled")
+    return <GateMessage>Este módulo não está disponível para a sua conta.</GateMessage>;
   if (status === "error")
     return <GateMessage>Sessão expirada ou inválida. Feche e reabra este painel.</GateMessage>;
 
