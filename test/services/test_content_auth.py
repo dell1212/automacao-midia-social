@@ -312,6 +312,30 @@ class TestVerifyUserSession(unittest.TestCase):
         self.assertEqual(result.role, "admin")
         self.assertEqual(result.name, "Ana")
 
+    def test_flipping_entitlement_to_inactive_blocks_a_working_session(self):
+        """The same token that works against an active tenant must stop working
+        the moment the entitlement is flipped — that is what makes the parent
+        app's module toggle a real gate and not a cosmetic one."""
+        token = self._token()
+        tenant = self._tenant(status=EntitlementStatus.active)
+
+        with patch.dict(os.environ, {"CONTENT_UI_JWT_PUBLIC_KEY": self.public_pem}):
+            result = content_auth.verify_user_session(
+                authorization=f"Bearer {token}",
+                session=self._session_returning_tenant(tenant),
+            )
+            self.assertIs(result.tenant, tenant)
+
+            tenant.entitlement_status = EntitlementStatus.inactive
+            with self.assertRaises(HTTPException) as ctx:
+                content_auth.verify_user_session(
+                    authorization=f"Bearer {token}",
+                    session=self._session_returning_tenant(tenant),
+                )
+
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertEqual(ctx.exception.detail, "Tenant is not entitled")
+
 
 class TestRequireRole(unittest.TestCase):
     def test_matching_role_passes(self):
