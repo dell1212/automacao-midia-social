@@ -1,4 +1,3 @@
-import { cn } from "../ui/cn";
 
 /* Chart colours.
  *
@@ -218,24 +217,15 @@ export function StatTile({
   label,
   value,
   hint,
-  unavailable,
 }: {
   label: string;
   value: string;
   hint?: string;
-  /** Renders the tile as present-but-empty. Used for the two metrics this
-   * system has never collected — dropping them would hide the gap. */
-  unavailable?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-1 px-3 py-2.5 border-r border-[var(--border)] last:border-r-0",
-        unavailable && "opacity-60",
-      )}
-    >
+    <div className="flex flex-col gap-1 px-3 py-2.5 border-r border-[var(--border)] last:border-r-0">
       <span className="text-[22px] leading-none font-semibold tracking-tight text-[var(--text-h)]">
-        {unavailable ? "—" : value}
+        {value}
       </span>
       <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--text)]">
         {label}

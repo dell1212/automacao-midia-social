@@ -20,9 +20,10 @@ interface Overview {
     published: number;
     scheduled: number;
     failed: number;
-    success_rate: number | null;
-    link_clicks: number | null;
-    engagement: number | null;
+    reach: number | null;
+    interactions: number | null;
+    engagement_rate: number | null;
+    reach_substituted_accounts: number;
   };
   throughput: Array<{ day: string; published: number; failed: number }>;
   platform_mix: Array<{ platform: string; published: number; failed: number }>;
@@ -53,6 +54,17 @@ const RANGES = [
 
 function pct(value: number | null): string {
   return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
+function count(value: number | null): string {
+  return value === null ? "—" : value.toLocaleString("pt-BR");
+}
+
+function reachHint(substitutedAccounts: number): string | undefined {
+  if (substitutedAccounts === 0) return undefined;
+  return substitutedAccounts === 1
+    ? "1 conta sem alcance — usando impressões"
+    : `${substitutedAccounts} contas sem alcance — usando impressões`;
 }
 
 export function Analytics() {
@@ -109,21 +121,20 @@ export function Analytics() {
             <StatTile label="Publicadas" value={String(data.tiles.published)} />
             <StatTile label="Agendadas" value={String(data.tiles.scheduled)} />
             <StatTile label="Falhas" value={String(data.tiles.failed)} />
-            <StatTile label="Taxa de sucesso" value={pct(data.tiles.success_rate)} />
-            {/* Present but empty, not omitted: keeping the six-tile grid says
-                these exist and are not collected yet, where dropping them
-                would just look like they were never part of the product. */}
+            {/* Alcance → Interações → Taxa de engajamento: distribution,
+                volume, quality. The hint only appears when some account in
+                this window has no real reach (LinkedIn, X, TikTok, YouTube)
+                and was substituted with impressions — the substitution
+                stays visible instead of turning into a silent lie. */}
             <StatTile
-              label="Cliques em links"
-              value="—"
-              hint="ainda não coletado"
-              unavailable
+              label="Alcance"
+              value={count(data.tiles.reach)}
+              hint={reachHint(data.tiles.reach_substituted_accounts)}
             />
+            <StatTile label="Interações" value={count(data.tiles.interactions)} />
             <StatTile
-              label="Engajamento"
-              value="—"
-              hint="ainda não coletado"
-              unavailable
+              label="Taxa de engajamento"
+              value={pct(data.tiles.engagement_rate)}
             />
           </Card>
 
