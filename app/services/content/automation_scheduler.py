@@ -427,7 +427,7 @@ _scheduler_thread: Optional[threading.Thread] = None
 
 
 def _tick() -> None:
-    """Um tick roda os 3 passes em sequência, cada um em sua própria sessão.
+    """Um tick roda os 4 passes em sequência, cada um em sua própria sessão.
 
     Ao contrário do dispatcher de publicação da fase 3, nenhum passe aqui
     precisa de um pool de threads próprio: a geração já é assíncrona por
@@ -436,7 +436,7 @@ def _tick() -> None:
     banco rápidas — o trabalho pesado sempre acontece em outro lugar.
     """
     # Cada passe é isolado: um passe que estoure não pode impedir os outros
-    # dois de rodar neste tick (e, como nada remove a linha ofensora da
+    # três de rodar neste tick (e, como nada remove a linha ofensora da
     # elegibilidade, o mesmo estouro se repetiria em todos os ticks seguintes).
     for name, pass_fn in (
         ("generation", _fill_campaign_calendars),

@@ -303,3 +303,101 @@ class TestCollectPublicationInsights(unittest.TestCase):
 
         adapter.fetch_insights.assert_not_called()
         self.assertEqual(len(session.exec(select(ContentPublicationInsight)).all()), 1)
+
+    def test_non_publication_error_writes_an_unexpected_error_snapshot(self):
+        # A malformed API response makes an adapter raise a plain KeyError/
+        # IndexError (raw dict/list indexing), not a PublicationError. This
+        # must still end in a recorded row, not escape to the outer
+        # except-and-rollback-with-no-row path — otherwise due_for_collection
+        # stays True forever and the same failure repeats every tick.
+        session, publication, account = self._session()
+        adapter = self._fake_adapter(fetch_error=KeyError("data"))
+
+        with patch.object(insights_collection, "get_adapter", return_value=adapter):
+            with patch.object(insights_collection, "load_credentials", return_value={}):
+                with patch.object(insights_collection.time, "sleep"):
+                    insights_collection.collect_publication_insights(session, batch_limit=50)
+
+        rows = session.exec(select(ContentPublicationInsight)).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].error_code, "unexpected")
+        self.assertIn("data", rows[0].error_message)
+
+    def test_batch_limit_bounds_attempts_not_eligible_rows_considered(self):
+        # A not-due publication with the lowest id must not consume the
+        # batch budget and block a later, due publication from ever being
+        # looked at — the old SQL LIMIT applied before due_for_collection
+        # was checked, so it would starve every publication past the cutoff.
+        session, publication, account = self._session()
+        session.add(
+            ContentPublicationInsight(
+                tenant_id=publication.tenant_id,
+                client_id=publication.client_id,
+                content_piece_id=publication.content_piece_id,
+                publication_id=publication.id,
+                social_account_id=account.id,
+                platform="instagram",
+                publication_cycle=1,
+                collected_at=datetime.utcnow() - timedelta(minutes=5),
+                likes=1,
+            )
+        )
+        session.commit()
+
+        due_publication = ContentSocialPublication(
+            tenant_id=publication.tenant_id,
+            client_id=publication.client_id,
+            content_piece_id=2,
+            social_account_id=account.id,
+            platform="instagram",
+            status=PublicationStatus.succeeded,
+            platform_post_id="media-2",
+            publication_cycle=1,
+            completed_at=datetime.utcnow() - timedelta(hours=1),
+        )
+        session.add(due_publication)
+        session.commit()
+
+        adapter = self._fake_adapter(fetch_result=InsightsResult(likes=9))
+
+        with patch.object(insights_collection, "get_adapter", return_value=adapter):
+            with patch.object(insights_collection, "load_credentials", return_value={}):
+                insights_collection.collect_publication_insights(session, batch_limit=1)
+
+        adapter.fetch_insights.assert_called_once()
+        rows = session.exec(
+            select(ContentPublicationInsight).where(
+                ContentPublicationInsight.publication_id == due_publication.id
+            )
+        ).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].publication_id, due_publication.id)
+
+    def test_terminal_error_code_stops_collection_permanently(self):
+        # invalid_credentials/invalid_params don't self-heal: once the most
+        # recent snapshot carries one of these codes, the pass must never
+        # attempt this publication again, regardless of cadence.
+        session, publication, account = self._session()
+        session.add(
+            ContentPublicationInsight(
+                tenant_id=publication.tenant_id,
+                client_id=publication.client_id,
+                content_piece_id=publication.content_piece_id,
+                publication_id=publication.id,
+                social_account_id=account.id,
+                platform="instagram",
+                publication_cycle=1,
+                collected_at=datetime.utcnow() - timedelta(days=1),
+                error_code="invalid_credentials",
+                error_message="missing scope",
+            )
+        )
+        session.commit()
+        adapter = self._fake_adapter()
+
+        with patch.object(insights_collection, "get_adapter", return_value=adapter):
+            with patch.object(insights_collection, "load_credentials", return_value={}):
+                insights_collection.collect_publication_insights(session, batch_limit=50)
+
+        adapter.fetch_insights.assert_not_called()
+        self.assertEqual(len(session.exec(select(ContentPublicationInsight)).all()), 1)

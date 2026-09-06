@@ -19,14 +19,18 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from loguru import logger
-from sqlalchemy import func
+from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from app.models.content import ContentSocialAccount
 from app.models.content_insights import ContentPublicationInsight
 from app.models.content_publishing import ContentSocialPublication, PublicationStatus
 from app.services.content import retry
-from app.services.content.publish_errors import PublicationError, is_retryable
+from app.services.content.publish_errors import (
+    PublicationError,
+    PublicationErrorCode,
+    is_retryable,
+)
 from app.services.content.publishers.base import InsightsResult
 from app.services.content.publishers.base import get_adapter, load_credentials
 
@@ -105,23 +109,33 @@ def collect_publication_insights(session: Session, *, batch_limit: int) -> None:
             ContentSocialPublication.completed_at >= cutoff,
         )
         .order_by(ContentSocialPublication.id)
-        .limit(batch_limit)
     ).all()
 
+    attempted = 0
     for publication in publications:
         try:
             adapter = get_adapter(publication.platform)
             if not adapter.supports_insights:
                 continue
 
-            last_collected_at = session.exec(
-                select(func.max(ContentPublicationInsight.collected_at)).where(
+            latest = session.exec(
+                select(ContentPublicationInsight)
+                .where(
                     ContentPublicationInsight.publication_id == publication.id
                 )
-            ).one()
+                .order_by(desc(ContentPublicationInsight.collected_at))
+                .limit(1)
+            ).first()
+            if latest is not None and latest.error_code in (
+                PublicationErrorCode.invalid_credentials.value,
+                PublicationErrorCode.invalid_params.value,
+            ):
+                # Terminal failure: a permission gap or a deleted post does
+                # not self-heal, so stop retrying this publication for good.
+                continue
             if not due_for_collection(
                 completed_at=publication.completed_at,
-                last_collected_at=last_collected_at,
+                last_collected_at=latest.collected_at if latest else None,
                 now=now,
             ):
                 continue
@@ -131,7 +145,11 @@ def collect_publication_insights(session: Session, *, batch_limit: int) -> None:
                 continue
             credentials = load_credentials(account)
 
+            if attempted >= batch_limit:
+                break
+
             try:
+                attempted += 1
                 result = _fetch_insights_with_retry(
                     adapter, publication, account, credentials
                 )
@@ -148,6 +166,30 @@ def collect_publication_insights(session: Session, *, batch_limit: int) -> None:
                         collected_at=now,
                         error_code=error.code.value,
                         error_message=error.message,
+                    )
+                )
+                session.commit()
+                continue
+            except Exception as exc:
+                # Not a designed PublicationError — an adapter bug (raw dict/
+                # list indexing on a malformed API response, typically) that
+                # would otherwise escape to the outer except and leave no
+                # row, keeping due_for_collection True forever. error_code
+                # deliberately doesn't match any PublicationErrorCode, so it
+                # falls back to the normal cadence instead of being retried
+                # every tick or treated as terminal.
+                session.add(
+                    ContentPublicationInsight(
+                        tenant_id=publication.tenant_id,
+                        client_id=publication.client_id,
+                        content_piece_id=publication.content_piece_id,
+                        publication_id=publication.id,
+                        social_account_id=publication.social_account_id,
+                        platform=publication.platform,
+                        publication_cycle=publication.publication_cycle,
+                        collected_at=now,
+                        error_code="unexpected",
+                        error_message=str(exc),
                     )
                 )
                 session.commit()
