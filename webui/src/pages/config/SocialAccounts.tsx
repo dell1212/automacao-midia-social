@@ -214,6 +214,12 @@ export function SocialAccounts() {
           <Field label="Credencial de acesso">
             <Input
               type="password"
+              // A service token, not the operator's own password. Chrome
+              // ignores autocomplete="off" on password inputs and offers to
+              // save it to the user's vault anyway; "new-password" is the
+              // token it does honour, and it also keeps the autofill
+              // dropdown from covering the field.
+              autoComplete="new-password"
               value={credentials}
               onChange={(event) => setCredentials(event.target.value)}
               placeholder="Token ou chave de acesso"

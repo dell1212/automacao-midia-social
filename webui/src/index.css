@@ -100,6 +100,28 @@
   }
 }
 
+/* Brand marks for the six publisher platforms.
+   Here rather than in the component because two of them are theme-dependent:
+   TikTok's mark is #010101 and X's is #000000, which are invisible against
+   the dark surface. Both brands publish a light mark for dark backgrounds, so
+   they invert to the theme's own foreground instead of staying black. The
+   other four are legible in both themes and never change. */
+:root {
+  --platform-instagram: #e1306c;
+  --platform-tiktok: #010101;
+  --platform-youtube: #ff0000;
+  --platform-x: #000000;
+  --platform-facebook: #1877f2;
+  --platform-linkedin: #0a66c2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --platform-tiktok: var(--color-paper);
+    --platform-x: var(--color-paper);
+  }
+}
+
 /* Preflight leaves #root alone: it needs to fill the viewport and stack, so
    that AppShell's sidebar/main row can be full height. Everything else the
    old tag-selector block did is now stated by the component that needs it. */

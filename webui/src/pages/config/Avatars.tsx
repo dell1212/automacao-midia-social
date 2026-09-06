@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageOff, Plus } from "lucide-react";
-import { apiClient } from "../../lib/apiClient";
+import { apiClient, apiErrorStatus } from "../../lib/apiClient";
 import { RequireRole } from "../../components/RequireRole";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -138,6 +138,19 @@ export function Avatars() {
     mutationFn: (id: number) => apiClient.delete<Avatar>(`/content/ui/config/avatars/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["config", "avatars", clientId] }),
   });
+
+  // Mirrors the convention in ApprovalRules.tsx/Clients.tsx/Providers.tsx:
+  // without this, a failed create just reverts the button with no
+  // explanation and the drawer sits there looking like nothing happened.
+  //
+  // 413 gets its own line because this is the only screen that uploads a
+  // file: the generic "tente novamente" would send someone into a retry
+  // loop with the same oversized image.
+  const createErrorMessage = !create.isError
+    ? null
+    : apiErrorStatus(create.error) === 413
+      ? "A imagem é grande demais para o servidor. Envie uma versão menor."
+      : "Não foi possível criar o avatar. Tente novamente.";
 
   // Shared by the Drawer's onClose (Esc + backdrop) and the Cancelar button
   // so every exit path clears the form, revokes the preview URL, and drops
@@ -306,6 +319,10 @@ export function Avatars() {
               placeholder="ID da voz no provedor"
             />
           </Field>
+
+          {createErrorMessage ? (
+            <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
+          ) : null}
 
           <div className="flex items-center gap-2">
             <Button

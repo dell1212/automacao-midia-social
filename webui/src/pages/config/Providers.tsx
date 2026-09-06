@@ -267,6 +267,10 @@ export function Providers() {
           >
             <Input
               type="password"
+              // A provider API key, not the operator's own password — see
+              // the note on the same field in SocialAccounts.tsx for why
+              // this is "new-password" and not "off".
+              autoComplete="new-password"
               value={credentials}
               onChange={(event) => setCredentials(event.target.value)}
               placeholder="Chave de API"

@@ -46,13 +46,16 @@ const PATHS: Record<Platform, string> = {
     "M20.4 3H3.6C2.7 3 2 3.7 2 4.6v14.8c0 .9.7 1.6 1.6 1.6h16.8c.9 0 1.6-.7 1.6-1.6V4.6c0-.9-.7-1.6-1.6-1.6ZM8.1 18.3H5.5V9.7h2.6v8.6ZM6.8 8.6a1.5 1.5 0 1 1 0-3.1 1.5 1.5 0 0 1 0 3.1Zm11.7 9.7h-2.6v-4.2c0-1 0-2.3-1.4-2.3s-1.6 1.1-1.6 2.2v4.3H10.3V9.7h2.5V11h.1c.3-.7 1.2-1.4 2.5-1.4 2.7 0 3.2 1.8 3.2 4.1v4.6Z",
 };
 
+/** The literal values live in index.css, next to every other token that
+ * changes with the theme: TikTok's and X's marks are black, which is
+ * invisible on the dark surface, so those two invert there. */
 export const PLATFORM_COLOR: Record<Platform, string> = {
-  instagram: "#E1306C",
-  tiktok: "#010101",
-  youtube: "#FF0000",
-  x: "#000000",
-  facebook: "#1877F2",
-  linkedin: "#0A66C2",
+  instagram: "var(--platform-instagram)",
+  tiktok: "var(--platform-tiktok)",
+  youtube: "var(--platform-youtube)",
+  x: "var(--platform-x)",
+  facebook: "var(--platform-facebook)",
+  linkedin: "var(--platform-linkedin)",
 };
 
 export function PlatformIcon({
