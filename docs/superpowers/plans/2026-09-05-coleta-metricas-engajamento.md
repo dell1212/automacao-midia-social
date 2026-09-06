@@ -16,7 +16,7 @@
 - Every new numeric field is `Optional`, and absence renders as `None`/`"—"`, never `0`. A rate with a zero denominator is `None`, not a division by zero.
 - `AnalyticsTiles.success_rate` is removed from the tile row entirely. It is **not** deleted from `AccountPerformanceRead` — that field and the "Desempenho por conta" table column are untouched.
 - `retry.run_with_retry` is **not reusable here** — it is hard-coded to catch `GenerationError` (the media-generation taxonomy in `app/services/content/errors.py`), not `PublicationError` (the publish taxonomy this feature uses, in `app/services/content/publish_errors.py`). A deliberate deviation from the spec's literal wording: Task 10 reimplements the same backoff *shape* using the pure `retry.backoff_delay` helper and `publish_errors.is_retryable`, which does work for `PublicationError`. Calling `run_with_retry` directly would silently skip every retry, since its `except GenerationError` clause never matches a `PublicationError`.
-- Follow existing code style exactly: Portuguese in docstrings/comments that explain *why* (matching every file this plan touches), English identifiers, `unittest.TestCase` + `unittest.mock.patch`/`MagicMock` for tests, no new test framework or dependency.
+- All comments and docstrings in new/modified Python and TypeScript code are in English — matching the user's global convention ("Código, comentários e commits: inglês") and the dominant convention actually observed in the sibling files this plan touches (`app/models/*.py`, `ui_analytics.py`, `publish_dispatcher.py`, `retry.py`, `publish_errors.py`, `capability.py`, and every `webui/src/**/*.tsx` file checked all use English prose comments throughout). `automation_scheduler.py` is a documented exception with some pre-existing Portuguese docstrings — that inconsistency is pre-existing and out of scope to fix, but new code added to that subsystem (Task 11's scheduler wiring, and `insights_collection.py`) still follows English, not that file's outlier. User-facing UI strings in `webui/` (labels, hints, error copy) stay in Portuguese, matching the rest of the product's copy — only code comments and docstrings are English. English identifiers throughout; `unittest.TestCase` + `unittest.mock.patch`/`MagicMock` for tests; no new test framework or dependency.
 - No behavior change to `publish()`/`check_compatibility()` on any adapter, to `_fill_campaign_calendars`, `_evaluate_pending_approvals`, or `_dispatch_scheduled_publications`.
 
 ---
@@ -44,16 +44,16 @@ from sqlmodel import Field, SQLModel
 
 
 class ContentPublicationInsight(SQLModel, table=True):
-    """Um snapshot de engajamento por (publicação, coleta) — nunca sobrescrito.
+    """One engagement snapshot per (publication, collection) — never overwritten.
 
-    Um post publicado hoje continua acumulando curtida por dias; sobrescrever
-    uma linha destruiria a resposta para "quando isso aconteceu". Uma coleta
-    que falhou também vira linha, com as cinco métricas nulas e `error_code`
-    preenchido — assim um token quebrado fica visível na mesma tabela em vez
-    de virar silêncio, e "quando foi a última tentativa" não precisa de
-    estado separado.
+    A post published today keeps accumulating likes for days; overwriting a
+    row would destroy the answer to "when did this happen". A failed
+    collection also becomes a row, with all five metrics null and
+    `error_code` filled in — so a broken token stays visible in the same
+    table instead of turning into silence, and "when was the last attempt"
+    needs no separate state.
 
-    Ver docs/superpowers/specs/2026-09-05-coleta-metricas-engajamento-design.md.
+    See docs/superpowers/specs/2026-09-05-coleta-metricas-engajamento-design.md.
     """
 
     __tablename__ = "content_publication_insights"
@@ -69,25 +69,25 @@ class ContentPublicationInsight(SQLModel, table=True):
         foreign_key="content_social_accounts.id", index=True
     )
     platform: str
-    # Espelha ContentSocialPublication.publication_cycle: republicar uma peça
-    # gera um post novo na plataforma, e as métricas do post antigo não podem
-    # se misturar com as do novo.
+    # Mirrors ContentSocialPublication.publication_cycle: republishing a
+    # piece creates a new post on the platform, and the old post's metrics
+    # must not blend with the new one's.
     publication_cycle: int
     collected_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Alcance (pessoas únicas) só existe de verdade no Instagram e no
-    # Facebook. As outras quatro plataformas só publicam impressions (volume
-    # de exibição, não de gente) — por isso as duas colunas são separadas e
-    # nuláveis, nunca uma soma sob um rótulo só. Ver a tabela de métricas por
-    # plataforma no design spec.
+    # Reach (unique people) only genuinely exists on Instagram and Facebook.
+    # The other four platforms only publish impressions (exposure volume,
+    # not people) — which is why these are two separate, nullable columns,
+    # never one sum under a single label. See the per-platform metric table
+    # in the design spec.
     reach: Optional[int] = None
     impressions: Optional[int] = None
     likes: Optional[int] = None
     comments: Optional[int] = None
     shares: Optional[int] = None
-    # A resposta como chegou. As APIs adicionam campo sem avisar; quando um
-    # número parecer errado, isto é a única forma de saber se o bug é nosso
-    # ou deles.
+    # The response as it arrived. APIs add fields without warning; when a
+    # number looks wrong, this is the only way to tell whether the bug is
+    # ours or theirs.
     raw: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
     error_code: Optional[str] = None
@@ -134,10 +134,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Um snapshot por (publicação, coleta) — nunca sobrescrito. Falha também
-    # é linha: um erro de coleta grava métricas nulas com error_code
-    # preenchido, então um token quebrado fica visível na mesma tabela em vez
-    # de virar silêncio.
+    # One snapshot per (publication, collection) — never overwritten. A
+    # failure is also a row: a collection error records null metrics with
+    # error_code filled in, so a broken token stays visible in the same
+    # table instead of turning into silence.
     op.create_table(
         'content_publication_insights',
         sa.Column('id', sa.Integer(), nullable=False),
@@ -188,12 +188,12 @@ def upgrade() -> None:
         op.f('ix_content_publication_insights_social_account_id'),
         'content_publication_insights', ['social_account_id'],
     )
-    # Composto: o worker de coleta lê "qual foi a última coleta desta
-    # publicação" (publication_id, collected_at); a leitura do dashboard é
-    # "toda coleta de um tenant numa janela" (tenant_id, collected_at). Um
-    # índice ascendente também serve ORDER BY ... DESC — o Postgres escaneia
-    # o B-tree pra trás sem custo extra, sem precisar de um índice DESC
-    # explícito.
+    # Composite: the collection worker reads "what was the last collection
+    # for this publication" (publication_id, collected_at); the dashboard
+    # reads "every collection for a tenant within a window" (tenant_id,
+    # collected_at). An ascending index also serves ORDER BY ... DESC —
+    # Postgres scans a B-tree backwards at no extra cost, with no need for an
+    # explicit DESC index.
     op.create_index(
         'ix_content_publication_insights_pub_collected',
         'content_publication_insights', ['publication_id', 'collected_at'],
@@ -311,12 +311,12 @@ Then, right after the existing `PublishResult` dataclass (after its closing `pla
 ```python
 @dataclass(frozen=True)
 class InsightsResult:
-    """Uma coleta de engajamento bem-sucedida.
+    """One successful engagement collection.
 
-    Todo campo é None por padrão, não 0 — zero é um fato que a plataforma
-    reportou, ausência não é. Nenhuma plataforma preenche as cinco: reach só
-    existe no Instagram/Facebook, shares não existe no YouTube, e assim por
-    diante. Ver a tabela de métricas por plataforma no design spec.
+    Every field defaults to None, not 0 — zero is a fact the platform
+    reported, absence is not. No platform fills in all five: reach only
+    exists on Instagram/Facebook, shares does not exist on YouTube, and so
+    on. See the per-platform metric table in the design spec.
     """
 
     reach: Optional[int] = None
@@ -1557,21 +1557,21 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'app.services.content.
 Create `app/services/content/insights_collection.py`:
 
 ```python
-"""Passe 4 do automation_scheduler: coleta de engajamento pós-publicação.
+"""Pass 4 of automation_scheduler: post-publish engagement collection.
 
-Ver docs/superpowers/specs/2026-09-05-coleta-metricas-engajamento-design.md.
+See docs/superpowers/specs/2026-09-05-coleta-metricas-engajamento-design.md.
 
-due_for_collection é a única lógica de agendamento e é pura: nada além dos
-próprios snapshots de content_publication_insights é persistido para decidir
-quando recoletar — a decisão é sempre derivada de completed_at e do
-collected_at mais recente já gravado.
+due_for_collection is the only scheduling logic and it is pure: nothing but
+content_publication_insights' own snapshots is persisted to decide when to
+recollect — the decision is always derived from completed_at and the most
+recently recorded collected_at.
 """
 from datetime import datetime, timedelta
 from typing import Optional
 
-# Cadência decrescente: quase todo engajamento acontece nos primeiros dias.
-# Cada tupla é (fim da janela, intervalo dentro dela), checadas em ordem —
-# a primeira janela em que a idade do post cabe decide o intervalo.
+# Decreasing cadence: almost all engagement happens in the first few days.
+# Each tuple is (end of window, interval within it), checked in order — the
+# first window the post's age fits decides the interval.
 INSIGHTS_WINDOW_DAYS = 14
 
 _CADENCE = (
@@ -1587,10 +1587,10 @@ def due_for_collection(
     last_collected_at: Optional[datetime],
     now: datetime,
 ) -> bool:
-    """Se uma publicação deve ser recoletada agora.
+    """Whether a publication should be recollected right now.
 
-    completed_at é quando o post foi ao ar; last_collected_at é a última vez
-    que uma coleta (sucesso ou erro) foi tentada, ou None se nunca foi.
+    completed_at is when the post went live; last_collected_at is the last
+    time a collection (success or error) was attempted, or None if never.
     """
     age = now - completed_at
     interval = None
@@ -1713,21 +1713,21 @@ Expected: FAIL with `AttributeError: module 'app.services.content.insights_colle
 In `app/services/content/insights_collection.py`, add imports and the function. Change the top of the file to:
 
 ```python
-"""Passe 4 do automation_scheduler: coleta de engajamento pós-publicação.
+"""Pass 4 of automation_scheduler: post-publish engagement collection.
 
-Ver docs/superpowers/specs/2026-09-05-coleta-metricas-engajamento-design.md.
+See docs/superpowers/specs/2026-09-05-coleta-metricas-engajamento-design.md.
 
-due_for_collection é a única lógica de agendamento e é pura: nada além dos
-próprios snapshots de content_publication_insights é persistido para decidir
-quando recoletar — a decisão é sempre derivada de completed_at e do
-collected_at mais recente já gravado.
+due_for_collection is the only scheduling logic and it is pure: nothing but
+content_publication_insights' own snapshots is persisted to decide when to
+recollect — the decision is always derived from completed_at and the most
+recently recorded collected_at.
 
-retry.run_with_retry não serve aqui: está amarrado a GenerationError (a
-taxonomia de geração de mídia em app/services/content/errors.py), não a
-PublicationError (a taxonomia de publicação, usada por este passe).
-_fetch_insights_with_retry reimplementa a mesma forma de backoff
-reaproveitando a função pura retry.backoff_delay e o is_retryable da própria
-taxonomia de publicação.
+retry.run_with_retry does not work here: it is hard-coded to GenerationError
+(the media-generation taxonomy in app/services/content/errors.py), not
+PublicationError (the publish taxonomy this pass uses).
+_fetch_insights_with_retry reimplements the same backoff shape, reusing the
+pure retry.backoff_delay function and the publish taxonomy's own
+is_retryable.
 """
 import time
 from datetime import datetime, timedelta
@@ -1742,9 +1742,9 @@ Then, after `due_for_collection`, add:
 
 ```python
 def _fetch_insights_with_retry(adapter, publication, account, credentials) -> InsightsResult:
-    """Repete só as falhas que dependem do momento (rate_limit/transient),
-    dentro deste tick. Esgotando as tentativas, ou diante de uma falha
-    não-retryable, propaga — quem chama grava o snapshot de erro."""
+    """Retries only failures that depend on the moment (rate_limit/transient),
+    within this tick. Once attempts run out, or facing a non-retryable
+    failure, it propagates — the caller records the error snapshot."""
     last_error: Optional[PublicationError] = None
     for attempt in range(1, retry.MAX_ATTEMPTS + 1):
         try:
@@ -1943,16 +1943,16 @@ Then, after `_fetch_insights_with_retry`, add:
 
 ```python
 def collect_publication_insights(session: Session, *, batch_limit: int) -> None:
-    """Passe 4: recoleta engajamento das publicações bem-sucedidas dos
-    últimos 14 dias, respeitando a cadência de due_for_collection.
+    """Pass 4: recollects engagement for successful publications from the
+    last 14 days, respecting due_for_collection's cadence.
 
-    Mesmo formato dos outros três passes: uma query pelas linhas elegíveis,
-    cada item isolado em seu próprio try/except Exception (um item ruim não
-    pode derrubar o passe inteiro), commit por item. A diferença específica
-    deste passe: um PublicationError vindo da própria coleta é capturado à
-    parte e vira um snapshot de erro gravado — é o modo de falha esperado e
-    desenhado (ver a seção Degradação do design spec), não um bug pra
-    engolir no catch-all genérico.
+    Same shape as the other three passes: one query for the eligible rows,
+    each item isolated in its own try/except Exception (one bad item can't
+    sink the whole pass), commit per item. The one thing specific to this
+    pass: a PublicationError from the collection itself is caught separately
+    and turned into a recorded error snapshot — that is the expected,
+    designed failure mode (see the design spec's Degradação section), not a
+    bug to swallow into the generic catch-all.
     """
     now = datetime.utcnow()
     cutoff = now - timedelta(days=INSIGHTS_WINDOW_DAYS)
@@ -2315,9 +2315,9 @@ class _EngagementTotals:
 def _pick_latest(
     rows: List[ContentPublicationInsight],
 ) -> Dict[int, ContentPublicationInsight]:
-    """De várias linhas (publicações e timestamps misturados), mantém só a
-    mais recentemente coletada por publication_id — somar todas contaria a
-    mesma curtida quinze vezes."""
+    """From several rows (publications and timestamps mixed together),
+    keeps only the most recently collected one per publication_id — summing
+    all of them would count the same like fifteen times."""
     latest: Dict[int, ContentPublicationInsight] = {}
     for row in rows:
         current = latest.get(row.publication_id)
@@ -2555,11 +2555,11 @@ to:
             <StatTile label="Publicadas" value={String(data.tiles.published)} />
             <StatTile label="Agendadas" value={String(data.tiles.scheduled)} />
             <StatTile label="Falhas" value={String(data.tiles.failed)} />
-            {/* Alcance → Interações → Taxa de engajamento: distribuição,
-                volume, qualidade. O hint aparece só quando alguma conta
-                nesta janela não tem alcance de verdade (LinkedIn, X, TikTok,
-                YouTube) e entrou como impressões — a substituição fica
-                visível em vez de virar mentira silenciosa. */}
+            {/* Alcance → Interações → Taxa de engajamento: distribution,
+                volume, quality. The hint only appears when some account in
+                this window has no real reach (LinkedIn, X, TikTok, YouTube)
+                and was substituted with impressions — the substitution
+                stays visible instead of turning into a silent lie. */}
             <StatTile
               label="Alcance"
               value={count(data.tiles.reach)}
