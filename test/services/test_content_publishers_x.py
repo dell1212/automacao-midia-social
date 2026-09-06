@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from app.models.content import ContentPieceType
 from app.services.content.publish_errors import PublicationError, PublicationErrorCode
+from app.services.content.publishers.base import InsightsResult
 from app.services.content.publishers.x import XAdapter
 
 
@@ -14,6 +15,16 @@ def _piece(**overrides):
 
 def _asset(url="https://cdn.example.com/a.jpg"):
     return MagicMock(url=url)
+
+
+def _account():
+    return MagicMock()
+
+
+def _publication(**overrides):
+    base = dict(platform_post_id="1700000000000000000")
+    base.update(overrides)
+    return MagicMock(**base)
 
 
 class TestXCompatibility(unittest.TestCase):
@@ -48,6 +59,72 @@ class TestXPublish(unittest.TestCase):
         self.assertEqual(result.platform_post_id, "tweet-1")
         body = post_json.call_args.args[1]
         self.assertEqual(body["media"]["media_ids"], ["media-1"])
+
+
+class TestXFetchInsights(unittest.TestCase):
+    def test_declares_support(self):
+        self.assertTrue(XAdapter.supports_insights)
+
+    def test_maps_canonical_response(self):
+        response = {
+            "data": {
+                "public_metrics": {
+                    "like_count": 10,
+                    "reply_count": 2,
+                    "retweet_count": 3,
+                    "quote_count": 1,
+                    "impression_count": 700,
+                }
+            }
+        }
+
+        with patch(
+            "app.services.content.publishers.x.get_json", return_value=response
+        ) as get_json:
+            result = XAdapter().fetch_insights(
+                _publication(), _account(), {"access_token": "tok"}
+            )
+
+        self.assertIsNone(result.reach)
+        self.assertEqual(result.impressions, 700)
+        self.assertEqual(result.likes, 10)
+        self.assertEqual(result.comments, 2)
+        self.assertEqual(result.shares, 4)  # retweets + quote tweets
+        get_json.assert_called_once()
+
+    def test_no_retweet_or_quote_data_leaves_shares_none(self):
+        response = {
+            "data": {
+                "public_metrics": {
+                    "like_count": 1,
+                    "reply_count": 0,
+                    "impression_count": 20,
+                }
+            }
+        }
+
+        with patch(
+            "app.services.content.publishers.x.get_json", return_value=response
+        ):
+            result = XAdapter().fetch_insights(
+                _publication(), _account(), {"access_token": "tok"}
+            )
+
+        self.assertIsNone(result.shares)
+
+    def test_error_propagates_uncaught(self):
+        with patch(
+            "app.services.content.publishers.x.get_json",
+            side_effect=PublicationError(
+                PublicationErrorCode.invalid_credentials, "no scope"
+            ),
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                XAdapter().fetch_insights(
+                    _publication(), _account(), {"access_token": "tok"}
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.invalid_credentials)
 
 
 if __name__ == "__main__":
