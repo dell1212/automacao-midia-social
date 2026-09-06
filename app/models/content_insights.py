@@ -6,16 +6,16 @@ from sqlmodel import Field, SQLModel
 
 
 class ContentPublicationInsight(SQLModel, table=True):
-    """Um snapshot de engajamento por (publicação, coleta) — nunca sobrescrito.
+    """One engagement snapshot per (publication, collection) — never overwritten.
 
-    Um post publicado hoje continua acumulando curtida por dias; sobrescrever
-    uma linha destruiria a resposta para "quando isso aconteceu". Uma coleta
-    que falhou também vira linha, com as cinco métricas nulas e `error_code`
-    preenchido — assim um token quebrado fica visível na mesma tabela em vez
-    de virar silêncio, e "quando foi a última tentativa" não precisa de
-    estado separado.
+    A post published today keeps accumulating likes for days; overwriting a
+    row would destroy the answer to "when did this happen". A failed
+    collection also becomes a row, with all five metrics null and
+    `error_code` filled in — so a broken token stays visible in the same
+    table instead of turning into silence, and "when was the last attempt"
+    needs no separate state.
 
-    Ver docs/superpowers/specs/2026-09-05-coleta-metricas-engajamento-design.md.
+    See docs/superpowers/specs/2026-09-05-coleta-metricas-engajamento-design.md.
     """
 
     __tablename__ = "content_publication_insights"
@@ -31,25 +31,25 @@ class ContentPublicationInsight(SQLModel, table=True):
         foreign_key="content_social_accounts.id", index=True
     )
     platform: str
-    # Espelha ContentSocialPublication.publication_cycle: republicar uma peça
-    # gera um post novo na plataforma, e as métricas do post antigo não podem
-    # se misturar com as do novo.
+    # Mirrors ContentSocialPublication.publication_cycle: republishing a
+    # piece creates a new post on the platform, and the old post's metrics
+    # must not blend with the new one's.
     publication_cycle: int
     collected_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Alcance (pessoas únicas) só existe de verdade no Instagram e no
-    # Facebook. As outras quatro plataformas só publicam impressions (volume
-    # de exibição, não de gente) — por isso as duas colunas são separadas e
-    # nuláveis, nunca uma soma sob um rótulo só. Ver a tabela de métricas por
-    # plataforma no design spec.
+    # Reach (unique people) only genuinely exists on Instagram and Facebook.
+    # The other four platforms only publish impressions (exposure volume,
+    # not people) — which is why these are two separate, nullable columns,
+    # never one sum under a single label. See the per-platform metric table
+    # in the design spec.
     reach: Optional[int] = None
     impressions: Optional[int] = None
     likes: Optional[int] = None
     comments: Optional[int] = None
     shares: Optional[int] = None
-    # A resposta como chegou. As APIs adicionam campo sem avisar; quando um
-    # número parecer errado, isto é a única forma de saber se o bug é nosso
-    # ou deles.
+    # The response as it arrived. APIs add fields without warning; when a
+    # number looks wrong, this is the only way to tell whether the bug is
+    # ours or theirs.
     raw: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
     error_code: Optional[str] = None

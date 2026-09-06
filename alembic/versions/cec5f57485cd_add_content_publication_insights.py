@@ -17,10 +17,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Um snapshot por (publicação, coleta) — nunca sobrescrito. Falha também
-    # é linha: um erro de coleta grava métricas nulas com error_code
-    # preenchido, então um token quebrado fica visível na mesma tabela em vez
-    # de virar silêncio.
+    # One snapshot per (publication, collection) — never overwritten. A
+    # failure is also a row: a collection error records null metrics with
+    # error_code filled in, so a broken token stays visible in the same
+    # table instead of turning into silence.
     op.create_table(
         'content_publication_insights',
         sa.Column('id', sa.Integer(), nullable=False),
@@ -71,12 +71,12 @@ def upgrade() -> None:
         op.f('ix_content_publication_insights_social_account_id'),
         'content_publication_insights', ['social_account_id'],
     )
-    # Composto: o worker de coleta lê "qual foi a última coleta desta
-    # publicação" (publication_id, collected_at); a leitura do dashboard é
-    # "toda coleta de um tenant numa janela" (tenant_id, collected_at). Um
-    # índice ascendente também serve ORDER BY ... DESC — o Postgres escaneia
-    # o B-tree pra trás sem custo extra, sem precisar de um índice DESC
-    # explícito.
+    # Composite: the collection worker reads "what was the last collection
+    # for this publication" (publication_id, collected_at); the dashboard
+    # reads "every collection for a tenant within a window" (tenant_id,
+    # collected_at). An ascending index also serves ORDER BY ... DESC —
+    # Postgres scans a B-tree backwards at no extra cost, with no need for an
+    # explicit DESC index.
     op.create_index(
         'ix_content_publication_insights_pub_collected',
         'content_publication_insights', ['publication_id', 'collected_at'],
