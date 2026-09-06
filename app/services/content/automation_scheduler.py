@@ -26,6 +26,7 @@ from app.models.content_publishing import ContentSocialPublication, PublicationS
 from app.services.content import approval_rules as approval_rules_service
 from app.services.content import audit
 from app.services.content import generation_templates as templates_service
+from app.services.content import insights_collection
 from app.services.content import pieces as pieces_service
 from app.services.content import publish_dispatcher
 from app.services.content import publications as publications_service
@@ -441,6 +442,7 @@ def _tick() -> None:
         ("generation", _fill_campaign_calendars),
         ("approval", _evaluate_pending_approvals),
         ("publish_dispatch", _dispatch_scheduled_publications),
+        ("insights_collection", insights_collection.collect_publication_insights),
     ):
         try:
             with Session(get_engine()) as session:

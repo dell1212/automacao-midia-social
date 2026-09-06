@@ -18,9 +18,17 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 
+from loguru import logger
+from sqlalchemy import func
+from sqlmodel import Session, select
+
+from app.models.content import ContentSocialAccount
+from app.models.content_insights import ContentPublicationInsight
+from app.models.content_publishing import ContentSocialPublication, PublicationStatus
 from app.services.content import retry
 from app.services.content.publish_errors import PublicationError, is_retryable
 from app.services.content.publishers.base import InsightsResult
+from app.services.content.publishers.base import get_adapter, load_credentials
 
 # Decreasing cadence: almost all engagement happens in the first few days.
 # Each tuple is (end of window, interval within it), checked in order — the
@@ -72,3 +80,101 @@ def _fetch_insights_with_retry(adapter, publication, account, credentials) -> In
                 raise
             time.sleep(retry.backoff_delay(attempt))
     raise last_error
+
+
+def collect_publication_insights(session: Session, *, batch_limit: int) -> None:
+    """Pass 4: recollects engagement for successful publications from the
+    last 14 days, respecting due_for_collection's cadence.
+
+    Same shape as the other three passes: one query for the eligible rows,
+    each item isolated in its own try/except Exception (one bad item can't
+    sink the whole pass), commit per item. The one thing specific to this
+    pass: a PublicationError from the collection itself is caught separately
+    and turned into a recorded error snapshot — that is the expected,
+    designed failure mode (see the design spec's Degradação section), not a
+    bug to swallow into the generic catch-all.
+    """
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=INSIGHTS_WINDOW_DAYS)
+    publications = session.exec(
+        select(ContentSocialPublication)
+        .where(
+            ContentSocialPublication.status == PublicationStatus.succeeded,
+            ContentSocialPublication.platform_post_id.is_not(None),
+            ContentSocialPublication.completed_at.is_not(None),
+            ContentSocialPublication.completed_at >= cutoff,
+        )
+        .order_by(ContentSocialPublication.id)
+        .limit(batch_limit)
+    ).all()
+
+    for publication in publications:
+        try:
+            adapter = get_adapter(publication.platform)
+            if not adapter.supports_insights:
+                continue
+
+            last_collected_at = session.exec(
+                select(func.max(ContentPublicationInsight.collected_at)).where(
+                    ContentPublicationInsight.publication_id == publication.id
+                )
+            ).one()
+            if not due_for_collection(
+                completed_at=publication.completed_at,
+                last_collected_at=last_collected_at,
+                now=now,
+            ):
+                continue
+
+            account = session.get(ContentSocialAccount, publication.social_account_id)
+            if account is None:
+                continue
+            credentials = load_credentials(account)
+
+            try:
+                result = _fetch_insights_with_retry(
+                    adapter, publication, account, credentials
+                )
+            except PublicationError as error:
+                session.add(
+                    ContentPublicationInsight(
+                        tenant_id=publication.tenant_id,
+                        client_id=publication.client_id,
+                        content_piece_id=publication.content_piece_id,
+                        publication_id=publication.id,
+                        social_account_id=publication.social_account_id,
+                        platform=publication.platform,
+                        publication_cycle=publication.publication_cycle,
+                        collected_at=now,
+                        error_code=error.code.value,
+                        error_message=error.message,
+                    )
+                )
+                session.commit()
+                continue
+
+            session.add(
+                ContentPublicationInsight(
+                    tenant_id=publication.tenant_id,
+                    client_id=publication.client_id,
+                    content_piece_id=publication.content_piece_id,
+                    publication_id=publication.id,
+                    social_account_id=publication.social_account_id,
+                    platform=publication.platform,
+                    publication_cycle=publication.publication_cycle,
+                    collected_at=now,
+                    reach=result.reach,
+                    impressions=result.impressions,
+                    likes=result.likes,
+                    comments=result.comments,
+                    shares=result.shares,
+                    raw=result.raw,
+                )
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception(
+                f"publication {getattr(publication, 'id', None)}: insights collection failed"
+            )
+            continue

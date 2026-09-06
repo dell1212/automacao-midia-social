@@ -2,6 +2,12 @@ import unittest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+from sqlmodel import Session, SQLModel, create_engine, select
+
+from app.models import content_insights  # noqa: F401  (registra a tabela no metadata)
+from app.models.content import ContentClient, ContentSocialAccount, ContentTenant
+from app.models.content_insights import ContentPublicationInsight
+from app.models.content_publishing import ContentSocialPublication, PublicationStatus
 from app.services.content import insights_collection, retry
 from app.services.content.insights_collection import due_for_collection
 from app.services.content.publish_errors import PublicationError, PublicationErrorCode
@@ -179,3 +185,121 @@ class TestFetchInsightsWithRetry(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, PublicationErrorCode.rate_limit)
         self.assertEqual(adapter.fetch_insights.call_count, retry.MAX_ATTEMPTS)
+
+
+class TestCollectPublicationInsights(unittest.TestCase):
+    def _session(self):
+        engine = create_engine("sqlite://")
+        SQLModel.metadata.create_all(engine)
+        session = Session(engine)
+        tenant = ContentTenant(
+            owner_user_id="u1", name="T", slug="t", api_token_hash="h"
+        )
+        session.add(tenant)
+        session.commit()
+        client = ContentClient(tenant_id=tenant.id, name="C")
+        session.add(client)
+        session.commit()
+        account = ContentSocialAccount(
+            client_id=client.id,
+            platform="instagram",
+            external_account_id="ig-1",
+            credentials_encrypted="irrelevant-for-this-test",
+        )
+        session.add(account)
+        session.commit()
+        publication = ContentSocialPublication(
+            tenant_id=tenant.id,
+            client_id=client.id,
+            content_piece_id=1,
+            social_account_id=account.id,
+            platform="instagram",
+            status=PublicationStatus.succeeded,
+            platform_post_id="media-1",
+            publication_cycle=1,
+            completed_at=datetime.utcnow() - timedelta(hours=1),
+        )
+        session.add(publication)
+        session.commit()
+        return session, publication, account
+
+    def _fake_adapter(self, *, supports_insights=True, fetch_result=None, fetch_error=None):
+        adapter = MagicMock()
+        adapter.supports_insights = supports_insights
+        if fetch_error is not None:
+            adapter.fetch_insights.side_effect = fetch_error
+        else:
+            adapter.fetch_insights.return_value = fetch_result or InsightsResult(likes=5)
+        return adapter
+
+    def test_successful_collection_writes_a_snapshot(self):
+        session, publication, account = self._session()
+        adapter = self._fake_adapter(
+            fetch_result=InsightsResult(reach=100, likes=5, comments=1, shares=0)
+        )
+
+        with patch.object(insights_collection, "get_adapter", return_value=adapter):
+            with patch.object(insights_collection, "load_credentials", return_value={}):
+                insights_collection.collect_publication_insights(session, batch_limit=50)
+
+        rows = session.exec(select(ContentPublicationInsight)).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].publication_id, publication.id)
+        self.assertEqual(rows[0].reach, 100)
+        self.assertEqual(rows[0].likes, 5)
+        self.assertIsNone(rows[0].error_code)
+
+    def test_fetch_failure_writes_an_error_snapshot_not_a_crash(self):
+        session, publication, account = self._session()
+        adapter = self._fake_adapter(
+            fetch_error=PublicationError(
+                PublicationErrorCode.invalid_credentials, "missing scope"
+            )
+        )
+
+        with patch.object(insights_collection, "get_adapter", return_value=adapter):
+            with patch.object(insights_collection, "load_credentials", return_value={}):
+                with patch.object(insights_collection.time, "sleep"):
+                    insights_collection.collect_publication_insights(session, batch_limit=50)
+
+        rows = session.exec(select(ContentPublicationInsight)).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].error_code, "invalid_credentials")
+        self.assertIsNone(rows[0].reach)
+        self.assertIsNone(rows[0].likes)
+
+    def test_platform_without_insights_support_is_skipped(self):
+        session, publication, account = self._session()
+        adapter = self._fake_adapter(supports_insights=False)
+
+        with patch.object(insights_collection, "get_adapter", return_value=adapter):
+            insights_collection.collect_publication_insights(session, batch_limit=50)
+
+        adapter.fetch_insights.assert_not_called()
+        self.assertEqual(session.exec(select(ContentPublicationInsight)).all(), [])
+
+    def test_publication_not_yet_due_is_skipped(self):
+        session, publication, account = self._session()
+        # A snapshot collected 10 minutes ago, well inside the 6h band for a
+        # 1-hour-old post — the next collection is not due yet.
+        session.add(
+            ContentPublicationInsight(
+                tenant_id=publication.tenant_id,
+                client_id=publication.client_id,
+                content_piece_id=publication.content_piece_id,
+                publication_id=publication.id,
+                social_account_id=account.id,
+                platform="instagram",
+                publication_cycle=1,
+                collected_at=datetime.utcnow() - timedelta(minutes=10),
+                likes=1,
+            )
+        )
+        session.commit()
+        adapter = self._fake_adapter()
+
+        with patch.object(insights_collection, "get_adapter", return_value=adapter):
+            insights_collection.collect_publication_insights(session, batch_limit=50)
+
+        adapter.fetch_insights.assert_not_called()
+        self.assertEqual(len(session.exec(select(ContentPublicationInsight)).all()), 1)
