@@ -112,6 +112,29 @@ class TestXFetchInsights(unittest.TestCase):
 
         self.assertIsNone(result.shares)
 
+    def test_partial_share_data_sums_present_values(self):
+        # One share metric present, the other entirely absent from API response
+        response = {
+            "data": {
+                "public_metrics": {
+                    "like_count": 5,
+                    "reply_count": 1,
+                    "retweet_count": 5,
+                    # quote_count is entirely absent
+                    "impression_count": 100,
+                }
+            }
+        }
+
+        with patch(
+            "app.services.content.publishers.x.get_json", return_value=response
+        ):
+            result = XAdapter().fetch_insights(
+                _publication(), _account(), {"access_token": "tok"}
+            )
+
+        self.assertEqual(result.shares, 5)
+
     def test_error_propagates_uncaught(self):
         with patch(
             "app.services.content.publishers.x.get_json",
