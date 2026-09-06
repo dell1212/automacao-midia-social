@@ -5,6 +5,7 @@ from app.services.content.publish_errors import PublicationError, PublicationErr
 from app.services.content.publishers.base import (
     PublisherAdapter,
     PublishResult,
+    InsightsResult,
     get_json,
     post_form,
     register_adapter,
@@ -19,6 +20,7 @@ _STATUS_POLL_TIMEOUT_SECONDS = 300.0
 
 class InstagramAdapter(PublisherAdapter):
     platform = "instagram"
+    supports_insights = True
 
     def check_compatibility(self, piece, asset) -> None:
         if piece.type not in (ContentPieceType.image, ContentPieceType.video):
@@ -80,6 +82,33 @@ class InstagramAdapter(PublisherAdapter):
         raise PublicationError(
             PublicationErrorCode.transient,
             "Instagram container did not finish processing in time",
+        )
+
+    def fetch_insights(self, publication, account, credentials) -> InsightsResult:
+        access_token = credentials["access_token"]
+        media_id = publication.platform_post_id
+
+        fields = get_json(
+            f"{_GRAPH_API_BASE}/{media_id}",
+            params={
+                "fields": "like_count,comments_count",
+                "access_token": access_token,
+            },
+        )
+        insights = get_json(
+            f"{_GRAPH_API_BASE}/{media_id}/insights",
+            params={"metric": "reach", "access_token": access_token},
+        )
+        reach = insights["data"][0]["values"][0]["value"]
+
+        return InsightsResult(
+            reach=reach,
+            likes=fields.get("like_count"),
+            comments=fields.get("comments_count"),
+            # No share count is reliable across every IG media type (only
+            # Reels expose one, inconsistently) — left None rather than
+            # guessed.
+            raw={"fields": fields, "insights": insights},
         )
 
 
