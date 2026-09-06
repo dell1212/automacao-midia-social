@@ -3,6 +3,8 @@ from app.services.content.publish_errors import PublicationError, PublicationErr
 from app.services.content.publishers.base import (
     PublisherAdapter,
     PublishResult,
+    InsightsResult,
+    get_json,
     post_form,
     register_adapter,
 )
@@ -12,6 +14,7 @@ _GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
 
 class FacebookAdapter(PublisherAdapter):
     platform = "facebook"
+    supports_insights = True
 
     def check_compatibility(self, piece, asset) -> None:
         if piece.type not in (ContentPieceType.image, ContentPieceType.video):
@@ -42,6 +45,31 @@ class FacebookAdapter(PublisherAdapter):
         return PublishResult(
             platform_post_id=post_id,
             platform_post_url=f"https://www.facebook.com/{post_id}",
+        )
+
+    def fetch_insights(self, publication, account, credentials) -> InsightsResult:
+        access_token = credentials["access_token"]
+        post_id = publication.platform_post_id
+
+        fields = get_json(
+            f"{_GRAPH_API_BASE}/{post_id}",
+            params={
+                "fields": "likes.summary(true),comments.summary(true),shares",
+                "access_token": access_token,
+            },
+        )
+        insights = get_json(
+            f"{_GRAPH_API_BASE}/{post_id}/insights",
+            params={"metric": "post_impressions_unique", "access_token": access_token},
+        )
+        reach = insights["data"][0]["values"][0]["value"]
+
+        return InsightsResult(
+            reach=reach,
+            likes=fields.get("likes", {}).get("summary", {}).get("total_count"),
+            comments=fields.get("comments", {}).get("summary", {}).get("total_count"),
+            shares=fields.get("shares", {}).get("count"),
+            raw={"fields": fields, "insights": insights},
         )
 
 
