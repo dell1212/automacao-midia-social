@@ -176,7 +176,7 @@ export function SocialAccounts() {
         description="A credencial é enviada ao servidor e não volta para esta tela."
       >
         <form
-          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (clientId === null) return;
@@ -225,7 +225,7 @@ export function SocialAccounts() {
             <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
           ) : null}
 
-          <div className="flex items-center gap-2 [&>button+button]:ml-0">
+          <div className="flex items-center gap-2">
             <Button
               type="submit"
               variant="primary"

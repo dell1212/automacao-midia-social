@@ -210,7 +210,7 @@ export function GenerationTemplates() {
         description="Define o que a automação gera para cada peça desta campanha."
       >
         <form
-          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (campaignId !== null && generationPrompt.trim() && effectiveAspectRatio.trim()) {
@@ -296,7 +296,7 @@ export function GenerationTemplates() {
             <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
           ) : null}
 
-          <div className="flex items-center gap-2 [&>button+button]:ml-0">
+          <div className="flex items-center gap-2">
             <Button
               type="submit"
               variant="primary"

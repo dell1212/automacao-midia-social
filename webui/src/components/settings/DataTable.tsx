@@ -77,7 +77,7 @@ export function DataTable<T>({
       {/* The wrapper scrolls, not the page: a five-column table must not make
           the whole layout scroll sideways on a narrow viewport. */}
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[13px] m-0">
+        <table className="w-full border-collapse text-[13px]">
           <thead>
             <tr className="border-b border-[var(--border)]">
               {columns.map((column) => (
@@ -99,7 +99,7 @@ export function DataTable<T>({
             {rows.map((row) => (
               <tr
                 key={rowKey(row)}
-                className="border-b border-[var(--border)] hover:bg-[var(--code-bg)] transition-colors [&:last-child>td]:border-b-0"
+                className="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--code-bg)] transition-colors"
               >
                 {columns.map((column) => (
                   <td

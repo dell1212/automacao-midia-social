@@ -5,11 +5,9 @@ import type {
 } from "react";
 import { cn } from "../ui/cn";
 
-// Preflight is off, so the `base` layer still styles bare input/select/
-// textarea for the not-yet-migrated screens. Utilities outrank it by layer
-// order, but only for properties they actually set — every property the base
-// rule defines has to be restated here or the old value shows through. Same
-// trap `Button.tsx` documents.
+// Preflight gives input/select/textarea `font: inherit`, no background, no
+// border and no radius, so the whole look of a control is stated here. This
+// is the only definition of one in the app.
 const CONTROL =
   "w-full h-8 px-2.5 text-[13px] font-normal font-sans " +
   "text-[var(--text-h)] bg-[var(--card-bg)] " +

@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { cn } from "./cn";
 
-/** Loading placeholder. Replaces the literal "Carregando..." text the legacy
- * screens use, so a list keeps its shape while it loads instead of collapsing
- * and pushing the page around. */
+/** Loading placeholder, in place of a literal "Carregando..." line: a list
+ * keeps its shape while it loads instead of collapsing and pushing the page
+ * around. */
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div

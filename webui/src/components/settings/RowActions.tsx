@@ -88,12 +88,7 @@ export function RowActions({
       // Confirmar itself, and the listener tears the confirmation down
       // before the click handler below ever runs. Keyboard Enter never hits
       // this path (no pointerdown), which is why it kept working throughout.
-      //
-      // [&>button+button]:ml-0 undoes `button + button { margin-left: 8px }`
-      // from index.css's base layer, same as the menu items below and the
-      // chip groups elsewhere — this row is a flex-gap layout, and left
-      // unscoped the base rule stacks its own margin on top of the gap.
-      <div ref={rootRef} className="inline-flex items-center gap-1.5 justify-end [&>button+button]:ml-0">
+      <div ref={rootRef} className="inline-flex items-center gap-1.5 justify-end">
         <span className="text-[12px] text-[var(--text)]">Confirmar?</span>
         <Button
           size="sm"
@@ -148,7 +143,7 @@ export function RowActions({
               role="menuitem"
               onClick={() => setConfirming(action.label)}
               className={cn(
-                "block w-full h-8 px-3 text-left text-[13px] font-medium ml-0 rounded-none",
+                "block w-full h-8 px-3 text-left text-[13px] font-medium",
                 "bg-transparent border-0 cursor-pointer transition-colors",
                 "hover:bg-[var(--code-bg)]",
                 action.danger ? "text-bad" : "text-[var(--text-h)]",

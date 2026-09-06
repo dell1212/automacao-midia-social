@@ -28,6 +28,14 @@ export interface ContentPieceSummary {
   created_at: string;
 }
 
+/** Lives here, next to the union it labels, so the queue and the detail
+ * screen cannot drift into calling the same value different things. */
+export const PIECE_TYPE_LABELS: Record<ContentPieceSummary["type"], string> = {
+  video: "Vídeo",
+  image: "Imagem",
+  audio: "Áudio",
+};
+
 export interface PieceAsset {
   type: "image" | "audio" | "video" | "thumbnail" | "subtitle";
   // null when the backend could not sign this asset — it is still listed so

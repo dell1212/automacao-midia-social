@@ -45,13 +45,7 @@ function ChipGroup({
       <legend className="mb-1.5 p-0 text-[13px] font-medium text-[var(--text-h)]">
         {label}
       </legend>
-      {/* [&>button+button]:ml-0 undoes `button + button { margin-left: 8px }`
-          from index.css's base layer (Preflight is off, so that bare-tag
-          rule still applies to these chips). Left alone, it would stack on
-          top of the flex gap below instead of being replaced by it, and it
-          would still land on the first chip of a wrapped row, throwing off
-          alignment there too. */}
-      <div className="flex flex-wrap gap-1.5 [&>button+button]:ml-0">
+      <div className="flex flex-wrap gap-1.5">
         {options.map((option) => {
           const active = selected.includes(option.value);
           return (
@@ -263,7 +257,7 @@ export function ApprovalRules() {
         description="Sem nenhuma condição marcada, a regra vale para qualquer peça — útil como regra final, com a prioridade mais alta."
       >
         <form
-          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (campaignId === null) return;
@@ -324,7 +318,7 @@ export function ApprovalRules() {
             <p className="m-0 text-[12px] text-bad">{createErrorMessage}</p>
           ) : null}
 
-          <div className="flex items-center gap-2 [&>button+button]:ml-0">
+          <div className="flex items-center gap-2">
             <Button
               type="submit"
               variant="primary"

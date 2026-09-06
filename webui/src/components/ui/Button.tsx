@@ -10,10 +10,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
 }
 
-// The stylesheet still styles bare <button> (lime background, fixed height,
-// 14px padding) for the not-yet-migrated screens. That rule lives in the
-// `base` layer, so every utility here outranks it — but each property it sets
-// has to be restated, or the base value shows through.
+// Preflight strips a button down to no background, no border and no radius,
+// so everything a button looks like is stated here. Nothing else in the app
+// styles bare <button>: this component is the only definition.
 const BASE =
   "inline-flex items-center justify-center gap-1.5 whitespace-nowrap " +
   "border rounded-[4px] font-medium cursor-pointer " +

@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Download } from "lucide-react";
 import { apiClient } from "../lib/apiClient";
 import { AuditLogList, formatAuditDetails } from "../components/AuditLogList";
+import { SettingsPage } from "../components/settings/SettingsPage";
+import { Select } from "../components/settings/Controls";
+import { Button } from "../components/ui/Button";
+import { Card, MicroLabel } from "../components/ui/Card";
 import type { AuditLogEntry } from "../lib/types";
 
 const ENTITY_TYPES = [
@@ -63,6 +68,40 @@ function toCsv(entries: AuditLogEntry[]): string {
   return [header.join(","), ...rows].join("\n");
 }
 
+/** One filter of the toolbar: caption above, control below.
+ *
+ * MicroLabel rather than Field: Field's <label> wraps its control, which is
+ * right for a form, but these two sit in a toolbar next to buttons and need
+ * to line up with them on the same baseline. */
+function Filter({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex min-w-48 flex-col gap-1.5">
+      <MicroLabel>{label}</MicroLabel>
+      <Select
+        value={value}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}
+
 export function HistoryPage() {
   const [entityType, setEntityType] = useState("");
   const [periodDays, setPeriodDays] = useState("");
@@ -88,74 +127,81 @@ export function HistoryPage() {
     downloadTextFile("historico.csv", toCsv(feed.data), "text/csv");
   };
 
+  const rows = feed.data;
+  const empty = !rows?.length;
+
   return (
-    <div>
-      <h1>Histórico</h1>
+    <SettingsPage
+      title="Histórico"
+      description="Cada criação, edição, decisão e publicação registrada pelo módulo, da mais recente para a mais antiga."
+    >
+      <Card className="flex flex-wrap items-end gap-3 px-4 py-3">
+        <Filter
+          label="Entidade"
+          value={entityType}
+          options={ENTITY_TYPES}
+          onChange={(value) => {
+            setEntityType(value);
+            setOffset(0);
+          }}
+        />
+        <Filter
+          label="Período"
+          value={periodDays}
+          options={PERIODS}
+          onChange={(value) => {
+            setPeriodDays(value);
+            setOffset(0);
+          }}
+        />
+        {/* Caption above the buttons, exactly like the two filters: the
+            export pair used to carry its caveat underneath, which made the
+            block taller and left the buttons sitting 28px above the selects
+            they share a row with. */}
+        <div className="ml-auto flex flex-col gap-1.5">
+          <MicroLabel>Exportar página atual</MicroLabel>
+          <div className="flex items-center gap-2">
+            <Button disabled={empty} onClick={exportCsv}>
+              <Download size={14} />
+              CSV
+            </Button>
+            <Button disabled={empty} onClick={exportJson}>
+              <Download size={14} />
+              JSON
+            </Button>
+          </div>
+        </div>
+      </Card>
 
-      <div className="controls-row">
-        <label>
-          Entidade
-          <select
-            value={entityType}
-            onChange={(event) => {
-              setEntityType(event.target.value);
-              setOffset(0);
-            }}
+      <AuditLogList
+        entries={rows}
+        isLoading={feed.isLoading}
+        isError={feed.isError}
+        error={feed.error}
+        emptyHint="Nenhum evento bate com os filtros escolhidos."
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-[12px] text-[var(--text)]">
+          {rows
+            ? `Exibindo ${rows.length === 0 ? 0 : offset + 1}–${offset + rows.length}`
+            : ""}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button
+            disabled={offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
           >
-            {ENTITY_TYPES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Período
-          <select
-            value={periodDays}
-            onChange={(event) => {
-              setPeriodDays(event.target.value);
-              setOffset(0);
-            }}
+            Anterior
+          </Button>
+          <Button
+            disabled={(rows?.length ?? 0) < PAGE_SIZE}
+            onClick={() => setOffset(offset + PAGE_SIZE)}
           >
-            {PERIODS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button type="button" disabled={!feed.data?.length} onClick={exportCsv}>
-          Exportar CSV
-        </button>
-        <button type="button" disabled={!feed.data?.length} onClick={exportJson}>
-          Exportar JSON
-        </button>
+            Próxima
+          </Button>
+        </div>
       </div>
-      <p>Exporta só a página atual (o que está listado abaixo).</p>
-
-      {feed.isLoading && <p>Carregando...</p>}
-      {feed.isError && <p>Erro ao carregar. Tente novamente.</p>}
-      {feed.data && <AuditLogList entries={feed.data} />}
-
-      <div className="controls-row">
-        {feed.data && (
-          <span>
-            Exibindo {feed.data.length === 0 ? 0 : offset + 1}–{offset + feed.data.length}
-          </span>
-        )}
-        <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
-          Anterior
-        </button>
-        <button
-          disabled={(feed.data?.length ?? 0) < PAGE_SIZE}
-          onClick={() => setOffset(offset + PAGE_SIZE)}
-        >
-          Próxima
-        </button>
-      </div>
-    </div>
+    </SettingsPage>
   );
 }

@@ -42,12 +42,7 @@ function AvatarCard({
             alt={`Imagem de referência de ${avatar.name}`}
             loading="lazy"
             onError={() => setBroken(true)}
-            // border-0 rounded-none: `img` in the base layer applies a
-            // 1px border and var(--radius) corners to every bare <img>. Left
-            // alone here it shows up as a thin inset frame with corners that
-            // don't match the card's own clip — on the one screen where the
-            // photo IS the content, that is not acceptable collateral.
-            className="w-full h-full object-cover border-0 rounded-none"
+            className="w-full h-full object-cover"
           />
         )}
       </div>
@@ -227,7 +222,7 @@ export function Avatars() {
         description="A imagem de referência define a aparência usada na geração."
       >
         <form
-          className="flex flex-col gap-4 items-stretch flex-nowrap m-0"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (clientId === null || !imageFile) return;
@@ -258,7 +253,7 @@ export function Avatars() {
                   <img
                     src={previewUrl}
                     alt="Prévia"
-                    className="w-full h-full object-cover border-0 rounded-none"
+                    className="w-full h-full object-cover"
                   />
                 ) : (
                   <ImageOff size={18} className="text-[var(--text)]" aria-hidden />
@@ -275,15 +270,12 @@ export function Avatars() {
                   setPreviewUrl(file ? URL.createObjectURL(file) : null);
                 }}
                 className={
-                  // h-8 p-0 bg-transparent border-0 rounded-none: the base
-                  // layer's `input, select { height }` and `input, select,
-                  // textarea { background, border, border-radius, padding }`
-                  // rules apply to a bare <input type="file"> exactly like any
-                  // other input. Left unrestated, they box the whole control
-                  // at a fixed 32px height with 6px/10px padding and a 1px
-                  // border — squeezing the 32px-tall file: button (below)
-                  // into an 18px content area it visibly overflows.
-                  "flex-1 min-w-0 h-8 p-0 bg-transparent border-0 rounded-none " +
+                  // Deliberately NOT the shared `Input`: a file input is a
+                  // label plus a browser-drawn button, not a text box, and
+                  // giving it the control's border and padding would frame
+                  // the button inside a second box. Only the file: button
+                  // itself is styled to match the other controls.
+                  "flex-1 min-w-0 h-8 " +
                   "text-[12px] text-[var(--text)] " +
                   "file:mr-3 file:h-8 file:px-3 file:rounded-[4px] file:border file:border-[var(--border)] " +
                   "file:bg-[var(--card-bg)] file:text-[13px] file:font-medium file:text-[var(--text-h)] " +
@@ -315,7 +307,7 @@ export function Avatars() {
             />
           </Field>
 
-          <div className="flex items-center gap-2 [&>button+button]:ml-0">
+          <div className="flex items-center gap-2">
             <Button
               type="submit"
               variant="primary"
