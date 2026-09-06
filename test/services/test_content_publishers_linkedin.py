@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from app.models.content import ContentPieceType
 from app.services.content.publish_errors import PublicationError, PublicationErrorCode
 from app.services.content.publishers.linkedin import LinkedInAdapter
+from app.services.content.publishers.base import InsightsResult
 
 
 def _piece(**overrides):
@@ -14,6 +15,16 @@ def _piece(**overrides):
 
 def _asset(url="https://cdn.example.com/a.jpg"):
     return MagicMock(url=url)
+
+
+def _account():
+    return MagicMock()
+
+
+def _publication(**overrides):
+    base = dict(platform_post_id="urn:li:share:123")
+    base.update(overrides)
+    return MagicMock(**base)
 
 
 class TestLinkedInCompatibility(unittest.TestCase):
@@ -70,6 +81,58 @@ class TestLinkedInPublish(unittest.TestCase):
             ugc_post_body["specificContent"]["com.linkedin.ugc.ShareContent"]["media"][0]["media"],
             "urn:li:digitalmediaAsset:abc",
         )
+
+
+class TestLinkedInFetchInsights(unittest.TestCase):
+    def test_declares_support(self):
+        self.assertTrue(LinkedInAdapter.supports_insights)
+
+    def test_maps_canonical_response(self):
+        social_actions = {
+            "likesSummary": {"totalLikes": 8},
+            "commentsSummary": {"aggregatedTotalComments": 2},
+        }
+        statistics = {
+            "results": {
+                "urn:li:share:123": {
+                    "totalShareStatistics": {
+                        "impressionCount": 500,
+                        "shareCount": 4,
+                    }
+                }
+            }
+        }
+
+        with patch(
+            "app.services.content.publishers.linkedin.get_json",
+            side_effect=[social_actions, statistics],
+        ) as get_json:
+            result = LinkedInAdapter().fetch_insights(
+                _publication(),
+                _account(),
+                {"access_token": "tok", "author_urn": "urn:li:organization:1"},
+            )
+
+        self.assertIsNone(result.reach)
+        self.assertEqual(result.impressions, 500)
+        self.assertEqual(result.likes, 8)
+        self.assertEqual(result.comments, 2)
+        self.assertEqual(result.shares, 4)
+        self.assertEqual(get_json.call_count, 2)
+
+    def test_error_propagates_uncaught(self):
+        with patch(
+            "app.services.content.publishers.linkedin.get_json",
+            side_effect=PublicationError(PublicationErrorCode.transient, "blip"),
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                LinkedInAdapter().fetch_insights(
+                    _publication(),
+                    _account(),
+                    {"access_token": "tok", "author_urn": "urn:li:organization:1"},
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.transient)
 
 
 if __name__ == "__main__":

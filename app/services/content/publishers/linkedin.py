@@ -5,7 +5,9 @@ from app.services.content.publish_errors import PublicationError, PublicationErr
 from app.services.content.publishers.base import (
     PublisherAdapter,
     PublishResult,
+    InsightsResult,
     get_bytes,
+    get_json,
     post_json,
     raise_for_response,
     register_adapter,
@@ -13,10 +15,13 @@ from app.services.content.publishers.base import (
 
 _REGISTER_UPLOAD_URL = "https://api.linkedin.com/v2/assets?action=registerUpload"
 _UGC_POSTS_URL = "https://api.linkedin.com/v2/ugcPosts"
+_SOCIAL_ACTIONS_URL = "https://api.linkedin.com/v2/socialActions"
+_SHARE_STATISTICS_URL = "https://api.linkedin.com/v2/organizationalEntityShareStatistics"
 
 
 class LinkedInAdapter(PublisherAdapter):
     platform = "linkedin"
+    supports_insights = True
 
     def check_compatibility(self, piece, asset) -> None:
         if piece.type not in (ContentPieceType.image, ContentPieceType.video):
@@ -94,6 +99,42 @@ class LinkedInAdapter(PublisherAdapter):
         return PublishResult(
             platform_post_id=post_id,
             platform_post_url=f"https://www.linkedin.com/feed/update/{post_id}/",
+        )
+
+    def fetch_insights(self, publication, account, credentials) -> InsightsResult:
+        access_token = credentials["access_token"]
+        author_urn = credentials["author_urn"]
+        share_urn = publication.platform_post_id
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "X-Restli-Protocol-Version": "2.0.0",
+        }
+
+        social_actions = get_json(f"{_SOCIAL_ACTIONS_URL}/{share_urn}", headers=headers)
+        statistics = get_json(
+            _SHARE_STATISTICS_URL,
+            params={
+                "q": "organizationalEntity",
+                "organizationalEntity": author_urn,
+                "shares[0]": share_urn,
+            },
+            headers=headers,
+        )
+        stats_row = (
+            statistics.get("results", {}).get(share_urn, {}).get("totalShareStatistics", {})
+        )
+
+        return InsightsResult(
+            # LinkedIn's post-level API has no unique-reach metric —
+            # impressionCount is the volume figure it publishes, which is
+            # why reach stays None and this platform gets substituted.
+            impressions=stats_row.get("impressionCount"),
+            likes=social_actions.get("likesSummary", {}).get("totalLikes"),
+            comments=social_actions.get("commentsSummary", {}).get(
+                "aggregatedTotalComments"
+            ),
+            shares=stats_row.get("shareCount"),
+            raw={"social_actions": social_actions, "statistics": statistics},
         )
 
 
