@@ -1,7 +1,11 @@
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
+from app.services.content import insights_collection, retry
 from app.services.content.insights_collection import due_for_collection
+from app.services.content.publish_errors import PublicationError, PublicationErrorCode
+from app.services.content.publishers.base import InsightsResult
 
 
 class TestDueForCollection(unittest.TestCase):
@@ -115,3 +119,63 @@ class TestDueForCollection(unittest.TestCase):
                 now=now,
             )
         )
+
+
+class TestFetchInsightsWithRetry(unittest.TestCase):
+    def test_returns_result_on_first_success(self):
+        adapter = MagicMock()
+        adapter.fetch_insights.return_value = InsightsResult(likes=1)
+
+        with patch("app.services.content.insights_collection.time.sleep") as sleep:
+            result = insights_collection._fetch_insights_with_retry(
+                adapter, MagicMock(), MagicMock(), {}
+            )
+
+        self.assertEqual(result.likes, 1)
+        sleep.assert_not_called()
+
+    def test_retries_transient_then_succeeds(self):
+        adapter = MagicMock()
+        adapter.fetch_insights.side_effect = [
+            PublicationError(PublicationErrorCode.transient, "blip"),
+            InsightsResult(likes=2),
+        ]
+
+        with patch("app.services.content.insights_collection.time.sleep") as sleep:
+            result = insights_collection._fetch_insights_with_retry(
+                adapter, MagicMock(), MagicMock(), {}
+            )
+
+        self.assertEqual(result.likes, 2)
+        sleep.assert_called_once()
+
+    def test_non_retryable_raises_immediately_without_sleeping(self):
+        adapter = MagicMock()
+        adapter.fetch_insights.side_effect = PublicationError(
+            PublicationErrorCode.invalid_credentials, "no scope"
+        )
+
+        with patch("app.services.content.insights_collection.time.sleep") as sleep:
+            with self.assertRaises(PublicationError) as ctx:
+                insights_collection._fetch_insights_with_retry(
+                    adapter, MagicMock(), MagicMock(), {}
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.invalid_credentials)
+        sleep.assert_not_called()
+        self.assertEqual(adapter.fetch_insights.call_count, 1)
+
+    def test_retryable_exhausted_raises_last_error(self):
+        adapter = MagicMock()
+        adapter.fetch_insights.side_effect = PublicationError(
+            PublicationErrorCode.rate_limit, "slow down"
+        )
+
+        with patch("app.services.content.insights_collection.time.sleep"):
+            with self.assertRaises(PublicationError) as ctx:
+                insights_collection._fetch_insights_with_retry(
+                    adapter, MagicMock(), MagicMock(), {}
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.rate_limit)
+        self.assertEqual(adapter.fetch_insights.call_count, retry.MAX_ATTEMPTS)
