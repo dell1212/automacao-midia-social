@@ -8,13 +8,21 @@ class AnalyticsTiles(BaseModel):
     published: int
     scheduled: int
     failed: int
-    # None when nothing resolved in the window — a rate over zero attempts is
-    # not 0%, it is unknown, and rendering it as 0% would read as failure.
-    success_rate: Optional[float]
-    # Null on purpose, not zero: this system has never collected post-publish
-    # telemetry. The UI renders these as "not collected yet".
-    link_clicks: Optional[int] = None
-    engagement: Optional[int] = None
+    # Reach (unique people) only exists on Instagram/Facebook; the other
+    # four platforms only publish impressions (exposure volume, not people).
+    # None when no publication in the window has a snapshot with any metric
+    # yet — not zero, which would read as "the campaign got zero reach"
+    # instead of "nothing collected yet".
+    reach: Optional[int] = None
+    interactions: Optional[int] = None
+    # None whenever reach is unknown or sums to zero — a rate over zero reach
+    # is not 0%, it is undefined.
+    engagement_rate: Optional[float] = None
+    # How many distinct social accounts in this window had their reach
+    # substituted by impressions, because their platform has no unique-reach
+    # metric. Feeds the reach tile's hint so the substitution stays visible
+    # rather than silently blending into one number.
+    reach_substituted_accounts: int = 0
 
 
 class ThroughputBucket(BaseModel):

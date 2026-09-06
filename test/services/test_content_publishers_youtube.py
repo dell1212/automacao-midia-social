@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from app.models.content import ContentPieceType
 from app.services.content.publish_errors import PublicationError, PublicationErrorCode
+from app.services.content.publishers.base import InsightsResult
 from app.services.content.publishers.youtube import YouTubeAdapter
 
 
@@ -15,6 +16,16 @@ def _piece(**overrides):
 
 def _asset(url="https://cdn.example.com/a.mp4"):
     return MagicMock(url=url)
+
+
+def _account():
+    return MagicMock()
+
+
+def _publication(**overrides):
+    base = dict(platform_post_id="yt-1")
+    base.update(overrides)
+    return MagicMock(**base)
 
 
 class TestYouTubeCompatibility(unittest.TestCase):
@@ -66,6 +77,63 @@ class TestYouTubePublish(unittest.TestCase):
                     )
 
         self.assertEqual(ctx.exception.code, PublicationErrorCode.invalid_credentials)
+
+
+class TestYouTubeFetchInsights(unittest.TestCase):
+    def test_declares_support(self):
+        self.assertTrue(YouTubeAdapter.supports_insights)
+
+    def test_maps_canonical_response(self):
+        response = {
+            "items": [
+                {
+                    "statistics": {
+                        "viewCount": "1500",
+                        "likeCount": "80",
+                        "commentCount": "12",
+                    }
+                }
+            ]
+        }
+
+        with patch(
+            "app.services.content.publishers.youtube.get_json", return_value=response
+        ) as get_json:
+            result = YouTubeAdapter().fetch_insights(
+                _publication(), _account(), {"access_token": "tok"}
+            )
+
+        self.assertIsInstance(result, InsightsResult)
+        self.assertIsNone(result.reach)
+        self.assertEqual(result.impressions, 1500)
+        self.assertEqual(result.likes, 80)
+        self.assertEqual(result.comments, 12)
+        self.assertIsNone(result.shares)
+        get_json.assert_called_once()
+
+    def test_no_items_is_invalid_params(self):
+        with patch(
+            "app.services.content.publishers.youtube.get_json",
+            return_value={"items": []},
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                YouTubeAdapter().fetch_insights(
+                    _publication(), _account(), {"access_token": "tok"}
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.invalid_params)
+
+    def test_error_propagates_uncaught(self):
+        with patch(
+            "app.services.content.publishers.youtube.get_json",
+            side_effect=PublicationError(PublicationErrorCode.transient, "blip"),
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                YouTubeAdapter().fetch_insights(
+                    _publication(), _account(), {"access_token": "tok"}
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.transient)
 
 
 if __name__ == "__main__":

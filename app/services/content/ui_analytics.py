@@ -1,21 +1,22 @@
 """Aggregates for the analytics dashboard.
 
-Everything here is computed from tables that already exist. Two of the
-reference product's six headline numbers — link clicks and engagement — are
-deliberately absent rather than faked: both need post-publish telemetry that
-this system has never collected (no shortener, no platform insights worker).
-They are returned as null so the UI can render them as "not collected yet"
-instead of quietly dropping them from the grid.
+Everything here is computed from tables that already exist. Link clicks are
+still absent rather than faked — they need a URL shortener with a public
+redirect route this system does not have (Instagram feed and TikTok have no
+clickable link at all, and only Facebook/LinkedIn report clicks even when
+one exists), which is a separate decision. Engagement (reach, interactions,
+rate) IS collected, by the automation_scheduler's insights_collection pass.
 
 Two substitutions the reference cannot make, because it does not generate the
 media it publishes: generation cost (real money, from ContentGenerationJob)
 and the auto-approval rate (how much of the pipeline runs without a human).
 """
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from sqlmodel import Session, func, select
+from sqlmodel import Session, func, or_, select
 
 from app.models.content import (
     ApprovalAction,
@@ -35,6 +36,7 @@ from app.models.content_analytics import (
     ThroughputBucket,
 )
 from app.models.content_generation import ContentGenerationJob
+from app.models.content_insights import ContentPublicationInsight
 from app.models.content_publishing import ContentSocialPublication, PublicationStatus
 
 
@@ -54,6 +56,96 @@ def _publications_in_range(
     )
 
 
+@dataclass(frozen=True)
+class _EngagementTotals:
+    reach: Optional[int]
+    interactions: Optional[int]
+    engagement_rate: Optional[float]
+    reach_substituted_accounts: int
+
+
+def _pick_latest(
+    rows: List[ContentPublicationInsight],
+) -> Dict[int, ContentPublicationInsight]:
+    """From several rows (publications and timestamps mixed together),
+    keeps only the most recently collected one per publication_id — summing
+    all of them would count the same like fifteen times."""
+    latest: Dict[int, ContentPublicationInsight] = {}
+    for row in rows:
+        current = latest.get(row.publication_id)
+        if current is None or row.collected_at > current.collected_at:
+            latest[row.publication_id] = row
+    return latest
+
+
+def _latest_insight_by_publication(
+    session: Session, publication_ids: List[int]
+) -> Dict[int, ContentPublicationInsight]:
+    if not publication_ids:
+        return {}
+    rows = session.exec(
+        select(ContentPublicationInsight).where(
+            ContentPublicationInsight.publication_id.in_(publication_ids),
+            # A row with every metric null is a recorded failure, not data —
+            # ignoring it here is what keeps a broken token from silently
+            # zeroing out engagement instead of just not contributing.
+            or_(
+                ContentPublicationInsight.reach.is_not(None),
+                ContentPublicationInsight.impressions.is_not(None),
+                ContentPublicationInsight.likes.is_not(None),
+                ContentPublicationInsight.comments.is_not(None),
+                ContentPublicationInsight.shares.is_not(None),
+            ),
+        )
+    ).all()
+    return _pick_latest(rows)
+
+
+def _engagement_tiles(
+    succeeded: List[ContentSocialPublication],
+    latest_by_publication: Dict[int, ContentPublicationInsight],
+) -> _EngagementTotals:
+    reach_total = 0
+    reach_present = False
+    substituted_accounts: set = set()
+    interactions_total = 0
+    interactions_present = False
+
+    for publication in succeeded:
+        snapshot = latest_by_publication.get(publication.id)
+        if snapshot is None:
+            continue
+
+        if snapshot.reach is not None:
+            reach_total += snapshot.reach
+            reach_present = True
+        elif snapshot.impressions is not None:
+            reach_total += snapshot.impressions
+            reach_present = True
+            substituted_accounts.add(publication.social_account_id)
+
+        if (
+            snapshot.likes is not None
+            or snapshot.comments is not None
+            or snapshot.shares is not None
+        ):
+            interactions_total += (
+                (snapshot.likes or 0) + (snapshot.comments or 0) + (snapshot.shares or 0)
+            )
+            interactions_present = True
+
+    return _EngagementTotals(
+        reach=reach_total if reach_present else None,
+        interactions=interactions_total if interactions_present else None,
+        engagement_rate=(
+            round(interactions_total / reach_total, 4)
+            if reach_present and reach_total and interactions_present
+            else None
+        ),
+        reach_substituted_accounts=len(substituted_accounts),
+    )
+
+
 def get_overview(
     session: Session,
     *,
@@ -67,7 +159,6 @@ def get_overview(
 
     succeeded = [p for p in publications if p.status == PublicationStatus.succeeded]
     failed = [p for p in publications if p.status == PublicationStatus.failed]
-    resolved = len(succeeded) + len(failed)
 
     # Forward-looking on purpose, and deliberately NOT bounded by the reporting
     # window: that window is trailing (last N days up to now), and a scheduled
@@ -85,14 +176,20 @@ def get_overview(
         )
     ).one()
 
+    engagement = _engagement_tiles(
+        succeeded,
+        _latest_insight_by_publication(
+            session, [p.id for p in succeeded if p.id is not None]
+        ),
+    )
     tiles = AnalyticsTiles(
         published=len(succeeded),
         scheduled=int(scheduled or 0),
         failed=len(failed),
-        success_rate=round(len(succeeded) / resolved, 4) if resolved else None,
-        # Not collected yet — see the module docstring.
-        link_clicks=None,
-        engagement=None,
+        reach=engagement.reach,
+        interactions=engagement.interactions,
+        engagement_rate=engagement.engagement_rate,
+        reach_substituted_accounts=engagement.reach_substituted_accounts,
     )
 
     # Time bucketing happens in Python rather than SQL on purpose: date_trunc

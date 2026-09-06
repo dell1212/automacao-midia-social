@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from app.models.content import ContentPieceType
 from app.services.content.publish_errors import PublicationError, PublicationErrorCode
+from app.services.content.publishers.base import InsightsResult
 from app.services.content.publishers.instagram import InstagramAdapter
 
 
@@ -18,6 +19,12 @@ def _asset(url="https://cdn.example.com/a.jpg"):
 
 def _account():
     return MagicMock()
+
+
+def _publication(**overrides):
+    base = dict(platform_post_id="17900000000000000")
+    base.update(overrides)
+    return MagicMock(**base)
 
 
 class TestInstagramCompatibility(unittest.TestCase):
@@ -143,6 +150,44 @@ class TestInstagramPublish(unittest.TestCase):
         self.assertEqual(ctx.exception.code, PublicationErrorCode.transient)
         get_json.assert_not_called()
         post_form.assert_called_once()
+
+
+class TestInstagramFetchInsights(unittest.TestCase):
+    def test_declares_support(self):
+        self.assertTrue(InstagramAdapter.supports_insights)
+
+    def test_maps_canonical_response(self):
+        fields_response = {"id": "media-1", "like_count": 12, "comments_count": 3}
+        insights_response = {"data": [{"name": "reach", "values": [{"value": 240}]}]}
+
+        with patch(
+            "app.services.content.publishers.instagram.get_json",
+            side_effect=[fields_response, insights_response],
+        ) as get_json:
+            result = InstagramAdapter().fetch_insights(
+                _publication(), _account(), {"access_token": "tok"}
+            )
+
+        self.assertIsInstance(result, InsightsResult)
+        self.assertEqual(result.reach, 240)
+        self.assertEqual(result.likes, 12)
+        self.assertEqual(result.comments, 3)
+        self.assertIsNone(result.shares)
+        self.assertEqual(get_json.call_count, 2)
+
+    def test_error_propagates_uncaught(self):
+        with patch(
+            "app.services.content.publishers.instagram.get_json",
+            side_effect=PublicationError(
+                PublicationErrorCode.invalid_credentials, "no scope"
+            ),
+        ):
+            with self.assertRaises(PublicationError) as ctx:
+                InstagramAdapter().fetch_insights(
+                    _publication(), _account(), {"access_token": "tok"}
+                )
+
+        self.assertEqual(ctx.exception.code, PublicationErrorCode.invalid_credentials)
 
 
 if __name__ == "__main__":

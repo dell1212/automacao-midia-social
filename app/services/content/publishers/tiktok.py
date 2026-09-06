@@ -5,12 +5,14 @@ from app.services.content.publish_errors import PublicationError, PublicationErr
 from app.services.content.publishers.base import (
     PublisherAdapter,
     PublishResult,
+    InsightsResult,
     post_json,
     register_adapter,
 )
 
 _INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/"
 _STATUS_URL = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
+_QUERY_VIDEOS_URL = "https://open.tiktokapis.com/v2/video/query/"
 # Upload/processing on TikTok's side is usually done in tens of seconds, not
 # minutes — much shorter budget than Instagram's, but still bounded.
 _STATUS_POLL_INTERVAL_SECONDS = 5.0
@@ -20,6 +22,7 @@ _TERMINAL_NON_PUBLISHED_STATUSES = ("FAILED", "SEND_TO_USER_INBOX")
 
 class TikTokAdapter(PublisherAdapter):
     platform = "tiktok"
+    supports_insights = True
 
     def check_compatibility(self, piece, asset) -> None:
         if piece.type != ContentPieceType.video:
@@ -77,6 +80,37 @@ class TikTokAdapter(PublisherAdapter):
         raise PublicationError(
             PublicationErrorCode.transient,
             "TikTok publish did not finish processing in time",
+        )
+
+    def fetch_insights(self, publication, account, credentials) -> InsightsResult:
+        access_token = credentials["access_token"]
+        video_id = publication.platform_post_id
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+
+        response = post_json(
+            f"{_QUERY_VIDEOS_URL}?fields=like_count,comment_count,share_count,view_count",
+            {"filters": {"video_ids": [video_id]}},
+            headers=headers,
+        ).json()
+        videos = response["data"]["videos"]
+        if not videos:
+            raise PublicationError(
+                PublicationErrorCode.invalid_params,
+                f"TikTok returned no video for id {video_id}",
+            )
+        video = videos[0]
+
+        return InsightsResult(
+            # No unique-reach metric in this API — view_count is the volume
+            # figure, which is why reach stays None here.
+            impressions=video.get("view_count"),
+            likes=video.get("like_count"),
+            comments=video.get("comment_count"),
+            shares=video.get("share_count"),
+            raw=response,
         )
 
 

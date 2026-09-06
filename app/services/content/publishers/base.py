@@ -1,12 +1,13 @@
 import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import requests
 
 from app.models.content import ContentSocialAccount, ContentPiece
 from app.models.content_generation import ContentAsset
+from app.models.content_publishing import ContentSocialPublication
 from app.services.content.crypto import decrypt_credentials
 from app.services.content.publish_errors import (
     PublicationError,
@@ -31,8 +32,31 @@ class PublishResult:
     platform_post_url: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class InsightsResult:
+    """One successful engagement collection.
+
+    Every field defaults to None, not 0 — zero is a fact the platform
+    reported, absence is not. No platform fills in all five: reach only
+    exists on Instagram/Facebook, shares does not exist on YouTube, and so
+    on. See the per-platform metric table in the design spec.
+    """
+
+    reach: Optional[int] = None
+    impressions: Optional[int] = None
+    likes: Optional[int] = None
+    comments: Optional[int] = None
+    shares: Optional[int] = None
+    raw: dict = field(default_factory=dict)
+
+
 class PublisherAdapter(ABC):
     platform: str
+    # Overridden to True by the adapters that implement fetch_insights below.
+    # The insights-collection pass checks this before ever calling
+    # fetch_insights, so an adapter that never overrides it is simply
+    # skipped rather than hitting the NotImplementedError default.
+    supports_insights: bool = False
 
     @abstractmethod
     def check_compatibility(self, piece: ContentPiece, asset: ContentAsset) -> None:
@@ -53,6 +77,21 @@ class PublisherAdapter(ABC):
         caption: str = "",
     ) -> PublishResult:
         ...
+
+    def fetch_insights(
+        self,
+        publication: ContentSocialPublication,
+        account: ContentSocialAccount,
+        credentials: dict,
+    ) -> InsightsResult:
+        """Engagement telemetry for one already-published post.
+
+        Not abstract: only the six platforms with supports_insights = True
+        override this. Errors are raised as PublicationError with the same
+        codes publish() uses, so the collection pass's retry/give-up logic
+        needs no separate taxonomy.
+        """
+        raise NotImplementedError(f"{self.platform} does not support fetch_insights")
 
 
 _ADAPTER_REGISTRY: dict[str, PublisherAdapter] = {}
