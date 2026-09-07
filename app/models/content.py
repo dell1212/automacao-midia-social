@@ -299,6 +299,15 @@ class TenantCreateResponse(TenantRead):
     api_token: str
 
 
+class TenantEntitlementUpdate(BaseModel):
+    entitlement_status: EntitlementStatus
+
+
+class TenantEntitlementRead(BaseModel):
+    tenant_id: int
+    entitlement_status: EntitlementStatus
+
+
 class ClientCreate(BaseModel):
     name: str
 

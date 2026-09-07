@@ -29,3 +29,23 @@ def list_tenants(session: Session) -> List[ContentTenant]:
 
 def get_tenant(session: Session, tenant_id: int) -> Optional[ContentTenant]:
     return session.get(ContentTenant, tenant_id)
+
+
+def set_entitlement(
+    session: Session, *, tenant_id: int, entitlement_status: EntitlementStatus
+) -> Optional[Tuple[ContentTenant, EntitlementStatus]]:
+    """Flips a tenant's entitlement, returning (tenant, previous_status).
+
+    The previous status is returned rather than logged here so the caller can
+    record the transition in ContentAuditLog without re-reading the row.
+    """
+    tenant = session.get(ContentTenant, tenant_id)
+    if tenant is None:
+        return None
+
+    previous = tenant.entitlement_status
+    tenant.entitlement_status = entitlement_status
+    session.add(tenant)
+    session.commit()
+    session.refresh(tenant)
+    return tenant, previous

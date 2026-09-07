@@ -4,7 +4,13 @@ from sqlmodel import Session
 from app.controllers import content_auth
 from app.controllers.v1.base import new_router
 from app.db import get_session
-from app.models.content import TenantCreate, TenantCreateResponse, TenantRead
+from app.models.content import (
+    TenantCreate,
+    TenantCreateResponse,
+    TenantEntitlementRead,
+    TenantEntitlementUpdate,
+    TenantRead,
+)
 from app.services.content import audit
 from app.services.content import tenants as tenants_service
 
@@ -42,3 +48,35 @@ def get_tenant(tenant_id: int, session: Session = Depends(get_session)):
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
     return tenant
+
+
+@router.patch(
+    "/content/tenants/{tenant_id}/entitlement", response_model=TenantEntitlementRead
+)
+def set_tenant_entitlement(
+    tenant_id: int,
+    payload: TenantEntitlementUpdate,
+    session: Session = Depends(get_session),
+):
+    """Server-to-server entitlement toggle, called by the parent app's
+    set-module-entitlement Edge Function. Inherits verify_admin_token from the
+    router: the browser never holds this token."""
+    result = tenants_service.set_entitlement(
+        session, tenant_id=tenant_id, entitlement_status=payload.entitlement_status
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    tenant, previous = result
+    audit.write_audit_log(
+        session,
+        tenant_id=tenant.id,
+        entity_type="tenant",
+        entity_id=tenant.id,
+        action="entitlement_changed",
+        actor="admin",
+        details={"from": previous.value, "to": tenant.entitlement_status.value},
+    )
+    return TenantEntitlementRead(
+        tenant_id=tenant.id, entitlement_status=tenant.entitlement_status
+    )

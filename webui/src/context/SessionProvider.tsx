@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiClient, onUnauthorized, setToken } from "../lib/apiClient";
+import { apiClient, apiErrorStatus, onUnauthorized, setToken } from "../lib/apiClient";
 
 interface UserSessionRead {
   tenant_id: number;
@@ -10,7 +10,7 @@ interface UserSessionRead {
   name: string | null;
 }
 
-type SessionStatus = "waiting" | "loading" | "ready" | "error";
+type SessionStatus = "waiting" | "loading" | "ready" | "error" | "not_entitled";
 
 interface SessionContextValue {
   status: SessionStatus;
@@ -66,10 +66,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const result = await apiClient.get<UserSessionRead>("/content/ui/session");
         setSession(result);
         setStatus("ready");
-      } catch {
-        // A network error or 5xx here is not a 401, so onUnauthorized never
-        // fires — but the token is just as dead, so drop it the same way.
+      } catch (error) {
+        // A 403 "Tenant is not entitled" is not a dead session: the token is
+        // valid, the module is switched off in the parent app. Telling the
+        // user to reopen the panel would send them after a fix that does not
+        // exist, so this case gets its own state. The token is dropped all the
+        // same — nothing here is authorized to run.
         setToken(null);
+        if (
+          apiErrorStatus(error) === 403 &&
+          error instanceof Error &&
+          error.message === "Tenant is not entitled"
+        ) {
+          setStatus("not_entitled");
+          return;
+        }
+        // A network error or 5xx is not a 401, so onUnauthorized never fires —
+        // but the token is just as dead.
         setStatus("error");
       }
     }
